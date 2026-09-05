@@ -216,6 +216,93 @@ namespace Lur
         }
 
         /// <summary>
+        /// The spawner that holds the mini-boss, or null.
+        ///
+        /// <b>Identified by what the creature does to the world, not by its name.</b> A boss
+        /// here is a creature whose Character carries a non-empty m_defeatSetGlobalKey - the
+        /// field that, on death, writes both a per-player unique key and a world global key.
+        /// That is exactly what "the boss" means in these three dungeons: the one whose death
+        /// the world remembers. Robbin's own dedicated save carries bosshildir1 and
+        /// bosshildir3 alongside defeated_eikthyr, and nothing but m_defeatSetGlobalKey writes
+        /// that pair of forms, so the field is set on these creatures.
+        ///
+        /// The rejected alternative was a list of spawner prefab names. It would work today
+        /// and it would be wrong in principle - the whole reason selection is theme bits
+        /// rather than location names is that a name list is a second copy of the game's data
+        /// that goes stale silently. m_creaturePrefab is a plain public field on a live
+        /// component, so this reads the game's own answer instead of remembering one.
+        ///
+        /// Returns null when no spawner in the dungeon holds such a creature, which is a real
+        /// possibility until the diagnostic pass has been run in all three. The caller refuses
+        /// and says so rather than falling back to waking everything.
+        /// </summary>
+        internal static CreatureSpawner Boss(DungeonGenerator dg)
+        {
+            foreach (CreatureSpawner spawner in Spawners(dg))
+            {
+                if (!IsBoss(spawner)) continue;
+                return spawner;
+            }
+
+            return null;
+        }
+
+        /// <summary>Whether this spawner's creature is one whose death the world records.</summary>
+        internal static bool IsBoss(CreatureSpawner spawner)
+        {
+            if (spawner == null) return false;
+            if (spawner.m_creaturePrefab == null) return false;
+
+            Character character;
+            if (!spawner.m_creaturePrefab.TryGetComponent(out character)) return false;
+            if (character == null) return false;
+
+            return !string.IsNullOrEmpty(character.m_defeatSetGlobalKey);
+        }
+
+        /// <summary>
+        /// The other spawners that share a spawn group with this one.
+        ///
+        /// Empty in the ordinary case, and that is the case worth designing for:
+        /// CheckGroupSpawnBlocked returns false immediately when m_spawnGroupRadius is 0 or
+        /// m_maxGroupSpawned is below 1, so an ungrouped boss spawner is answerable on its own
+        /// and Lur touches exactly one spawner.
+        ///
+        /// When the boss <i>is</i> grouped, clearing it alone is not enough and not a
+        /// judgement call: the group counts spawnedEver across all its members, so a spent
+        /// neighbour keeps the count at the maximum and vanilla refuses with "I have not
+        /// spawned, but someone else has made us reach the maximum, abort". Waking the group
+        /// with it is the minimum that makes the boss reachable, not a widening of scope.
+        ///
+        /// The grouping rule is vanilla's own: same m_spawnGroupID, and within the sum of the
+        /// two radii.
+        /// </summary>
+        internal static List<CreatureSpawner> Groupmates(CreatureSpawner boss,
+            List<CreatureSpawner> candidates)
+        {
+            var mates = new List<CreatureSpawner>();
+            if (boss == null || candidates == null) return mates;
+
+            if (boss.m_spawnGroupRadius <= 0f || boss.m_maxGroupSpawned < 1) return mates;
+
+            foreach (CreatureSpawner other in candidates)
+            {
+                if (other == null || other == boss) continue;
+                if (other.m_spawnGroupID != boss.m_spawnGroupID) continue;
+
+                float reach = boss.m_spawnGroupRadius + other.m_spawnGroupRadius;
+                if (Vector3.Distance(boss.transform.position, other.transform.position) > reach)
+                {
+                    continue;
+                }
+
+                mates.Add(other);
+            }
+
+            return mates;
+        }
+
+        /// <summary>
         /// Whether anything inside this dungeon is a tombstone.
         ///
         /// A refusal rather than a filter. Waking a dungeon around somebody's unrecovered

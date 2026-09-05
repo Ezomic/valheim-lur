@@ -7,18 +7,18 @@ namespace Lur
     /// <summary>
     /// Sounding the horn: the only place in this mod that writes anything.
     ///
-    /// What it writes is deliberately tiny. Two fields on each spent spawner's ZDO and one
-    /// stamp on the generator's, and that is the whole of it. Lur never destroys a ZDO, never
-    /// calls DungeonGenerator.Generate, never touches terrain and never walks the scene to
-    /// delete things. The boss does not appear because Lur spawned it - it appears because
-    /// vanilla's own CreatureSpawner.UpdateSpawner runs a second later and finds a spawner
-    /// that has not fired yet.
+    /// What it writes is deliberately tiny. Two fields on one spawner's ZDO and one stamp on
+    /// the generator's, and in the ordinary case that is the whole of it. Lur never destroys a
+    /// ZDO, never calls DungeonGenerator.Generate, never touches terrain and never walks the
+    /// scene to delete things. The boss does not appear because Lur spawned it - it appears
+    /// because vanilla's own CreatureSpawner.UpdateSpawner runs a second later and finds a
+    /// spawner that has not fired yet.
     ///
-    /// Why the whole set of spawners and not just the boss: CheckGroupSpawnBlocked counts
-    /// "spawnedEver" across every member of a spawn group, so clearing one spawner and leaving
-    /// its neighbours spent leaves the group blocked on a neighbour. Clearing them all is what
-    /// makes it work, and it is also why this code needs to know nothing about which of them
-    /// is the boss.
+    /// <b>The boss and nothing else.</b> The escort on the way in belongs to whatever mod
+    /// repopulates ordinary dungeons, and that is a different mechanism rather than a smaller
+    /// version of this one: most of what a crypt loses is destroyed ZDOs, which only
+    /// regeneration restores. See <see cref="Wake"/> for the single case where a groupmate has
+    /// to be woken alongside the boss, and why it is forced rather than chosen.
     ///
     /// <b>The horn is taken on success, not on use.</b> If nothing stirs within WatchSeconds
     /// the connections are put back and the player keeps it. That ordering is the reason the
@@ -135,9 +135,24 @@ namespace Lur
         }
 
         /// <summary>
-        /// Clears the spent mark on every spawner in the dungeon that can take it.
+        /// Clears the spent mark on the mini-boss, and on nothing else that can be avoided.
         ///
-        /// Reads first, writes second, and never interleaves them: a spawner's "already fired"
+        /// <b>The boss alone is the whole feature.</b> The draugr and skeletons on the way in
+        /// are an ordinary dungeon's population, and repopulating an ordinary dungeon is a
+        /// different mod with a different mechanism - it has to regenerate, because most of
+        /// what a crypt loses is destroyed ZDOs rather than modified ones. Lur waking the
+        /// escort as well would be that mod doing half its job badly, in a DLL whose entire
+        /// safety argument is that it deletes nothing.
+        ///
+        /// The one exception is not a choice. CheckGroupSpawnBlocked returns false immediately
+        /// unless the spawner is grouped, so an ungrouped boss is cleared entirely on its own
+        /// - which is the expected case and touches exactly one ZDO. A <i>grouped</i> boss
+        /// counts spawnedEver across every member, so a spent neighbour holds the count at the
+        /// maximum and vanilla refuses to spawn it at all. Waking the group with it is the
+        /// minimum that makes the boss reachable, and the log says when that happened so it is
+        /// never a silent widening.
+        ///
+        /// Reads first, writes second, and never interleaved: a spawner's "already fired"
         /// record and its "the creature it made is still alive" record are the same field, so
         /// clearing one before reading the other would defeat both tests at once and duplicate
         /// the boss.
@@ -147,51 +162,60 @@ namespace Lur
             var cleared = new List<Cleared>();
 
             List<CreatureSpawner> spawners = Dungeons.Spawners(dg);
-            int alive = 0;
-            int armed = 0;
-            int built = 0;
-            int keyed = 0;
+            CreatureSpawner boss = Dungeons.Boss(dg);
 
-            foreach (CreatureSpawner spawner in spawners)
+            if (boss == null)
             {
-                ZNetView nview = spawner.GetComponent<ZNetView>();
-                if (nview == null || !nview.IsValid()) continue;
+                // Not the same as "already woken", and worth saying loudly in the log: it
+                // means no spawner in this dungeon holds a creature whose death the world
+                // records, which is either a dungeon Lur should not be in or a reading the
+                // diagnostic pass needs to explain.
+                LurPlugin.Log.LogWarning(Dungeons.Describe(dg) + ": no boss spawner found "
+                    + "among " + spawners.Count + " spawner(s). Turn on Diagnose and revisit "
+                    + "to see what each of them holds.");
+                Refuse(player, "Nothing sleeps here.");
+                return cleared;
+            }
 
-                ZDO zdo = nview.GetZDO();
+            // Judge the boss before writing anything at all. Clearing its groupmates first and
+            // then discovering the boss itself is blocked would leave the dungeon's population
+            // altered for nothing - the one outcome this mod must never produce.
+            string refusal;
+            if (!Clearable(boss, out refusal))
+            {
+                LurPlugin.Log.LogInfo(Dungeons.Describe(dg) + ": boss spawner not clearable - "
+                                      + refusal);
+                Refuse(player, refusal);
+                return cleared;
+            }
+
+            var targets = new List<CreatureSpawner> { boss };
+
+            List<CreatureSpawner> mates = Dungeons.Groupmates(boss, spawners);
+            if (mates.Count > 0)
+            {
+                LurPlugin.Log.LogInfo(string.Format(
+                    "{0}: the boss shares spawn group {1} with {2} other spawner(s), so they "
+                    + "are woken with it - the group counts spawnedEver across all members and "
+                    + "a spent neighbour would keep the boss blocked.",
+                    Dungeons.Describe(dg), boss.m_spawnGroupID, mates.Count));
+
+                targets.AddRange(mates);
+            }
+
+            foreach (CreatureSpawner spawner in targets)
+            {
+                ZDO zdo = ZdoOf(spawner);
                 if (zdo == null) continue;
 
-                // Read both facts before touching anything.
+                // Re-read rather than carrying the values from Clearable: the judgement above
+                // and the write below are separate moments, and the connection is the field
+                // both tests key on.
                 ZDOExtraData.ConnectionType type = zdo.GetConnectionType();
                 ZDOID target = zdo.GetConnectionZDOID(ZDOExtraData.ConnectionType.Spawned);
 
-                if (type == ZDOExtraData.ConnectionType.None)
-                {
-                    armed++;
-                    continue;
-                }
-
-                if (!target.IsNone() && ZDOMan.instance.GetZDO(target) != null)
-                {
-                    alive++;
-                    continue;
-                }
-
-                // Vanilla's own remaining gates. Honour them and say so rather than override
-                // them: a spawner inside a player base will not fire however this mod marks
-                // it, and silently re-arming it would spend the horn for nothing.
-                if (!spawner.m_spawnInPlayerBase
-                    && EffectArea.IsPointInsideArea(
-                        spawner.transform.position, EffectArea.Type.PlayerBase) != null)
-                {
-                    built++;
-                    continue;
-                }
-
-                if (Blocked(spawner))
-                {
-                    keyed++;
-                    continue;
-                }
+                string ignored;
+                if (!Clearable(spawner, out ignored)) continue;
 
                 // Ownership first: UpdateSpawner opens with an IsOwner check, and
                 // SetOwnerInternal takes effect synchronously, so this is what makes the
@@ -209,21 +233,71 @@ namespace Lur
             if (LurConfig.Verbose.Value || cleared.Count == 0)
             {
                 LurPlugin.Log.LogInfo(string.Format(
-                    "{0}: {1} spawner(s), cleared {2}, {3} still alive, {4} already armed, "
-                    + "{5} inside a player base, {6} blocked by a global key.",
-                    Dungeons.Describe(dg), spawners.Count, cleared.Count, alive, armed, built,
-                    keyed));
+                    "{0}: {1} spawner(s) present, boss is {2}, cleared {3}.",
+                    Dungeons.Describe(dg), spawners.Count,
+                    Utils.GetPrefabName(boss.gameObject), cleared.Count));
             }
 
-            if (cleared.Count != 0) return cleared;
-
-            // Every reason for an empty set reads the same to a player standing in an empty
-            // room, so name the ones that are not "you already did this".
-            if (built > 0) Refuse(player, "Something built here keeps them away.");
-            else if (alive > 0) Refuse(player, "They are already awake.");
-            else Refuse(player, "Nothing sleeps here.");
+            if (cleared.Count == 0) Refuse(player, "Nothing sleeps here.");
 
             return cleared;
+        }
+
+        /// <summary>
+        /// Whether this spawner can be woken, and if not, what to tell the player.
+        ///
+        /// Every gate here is vanilla's own. Honouring them and reporting them is the point:
+        /// a spawner inside a player base will not fire however this mod marks it, so
+        /// re-arming it anyway would spend the horn and produce nothing, which is exactly the
+        /// failure the watch and this check exist to prevent between them.
+        /// </summary>
+        private static bool Clearable(CreatureSpawner spawner, out string refusal)
+        {
+            refusal = "Nothing sleeps here.";
+
+            ZDO zdo = ZdoOf(spawner);
+            if (zdo == null) return false;
+
+            if (zdo.GetConnectionType() == ZDOExtraData.ConnectionType.None)
+            {
+                // Never fired, so there is nothing to undo. In a Hildir dungeon this almost
+                // always means the boss is standing in the next room.
+                refusal = "It is already awake.";
+                return false;
+            }
+
+            ZDOID target = zdo.GetConnectionZDOID(ZDOExtraData.ConnectionType.Spawned);
+            if (!target.IsNone() && ZDOMan.instance.GetZDO(target) != null)
+            {
+                refusal = "It is already awake.";
+                return false;
+            }
+
+            if (!spawner.m_spawnInPlayerBase
+                && EffectArea.IsPointInsideArea(
+                    spawner.transform.position, EffectArea.Type.PlayerBase) != null)
+            {
+                refusal = "Something built here keeps it away.";
+                return false;
+            }
+
+            if (Blocked(spawner))
+            {
+                refusal = "Nothing here answers the horn.";
+                return false;
+            }
+
+            return true;
+        }
+
+        private static ZDO ZdoOf(CreatureSpawner spawner)
+        {
+            if (spawner == null) return null;
+
+            ZNetView nview = spawner.GetComponent<ZNetView>();
+            if (nview == null || !nview.IsValid()) return null;
+
+            return nview.GetZDO();
         }
 
         private static bool Blocked(CreatureSpawner spawner)

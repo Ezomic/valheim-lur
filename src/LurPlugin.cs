@@ -17,12 +17,17 @@ namespace Lur
     /// single fight, and once it is won they are finished forever. That is the right default
     /// for a world's story and a poor one for a server people keep playing on, because the
     /// fight is the part worth doing twice and the cosmetic reward is the part that is not.
-    /// Lur separates them: sounding the horn re-arms the dungeon's spent one-shot spawners so
-    /// the boss and everything guarding it walk out again, and touches nothing else. Looted
-    /// chests stay looted, smashed props stay smashed, and Hildir will not accept a second
-    /// turn-in, because her own Trader refuses an offering whose key the world already holds.
-    /// It repopulates; it does not reset. The mod that resets an ordinary crypt is a different
-    /// one, and it deletes things, which is exactly why it is not this one.
+    /// Lur separates them: sounding the horn re-arms the spent spawner that holds the
+    /// mini-boss, and touches nothing else at all. Not the draugr on the way in, not the
+    /// chests, not the props. Looted chests stay looted, smashed pots stay smashed, and Hildir
+    /// will not accept a second turn-in, because her own Trader refuses an offering whose key
+    /// the world already holds. A repeat run buys the fight, its drops and its trophy.
+    ///
+    /// The escort is deliberately somebody else's job. Repopulating an ordinary dungeon is not
+    /// a larger version of this - it is a different mechanism, because most of what a crypt
+    /// loses is destroyed ZDOs rather than modified ones, and only regeneration puts those
+    /// back. A mod that regenerates has to delete first, and that is precisely the thing this
+    /// DLL must never learn how to do.
     ///
     /// Mechanically it is smaller than it sounds. A spent one-shot CreatureSpawner has lost
     /// nothing - the record of its firing is a connection on a ZDO that is still there - so
