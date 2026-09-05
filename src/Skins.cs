@@ -38,6 +38,15 @@ namespace Lur
                 { "seed",  new[] { "wood_beam", "wood_wall" } },
                 { "stone", new[] { "stone_wall_2x1", "piece_stonecutter", "smelter" } },
 
+                // The horn's two surfaces. Both fall back to timber rather than to nothing:
+                // Skins returns a null material for a known group whose donors all fail to
+                // resolve, and a null in sharedMaterials draws as Unity's magenta error shader,
+                // which reads as a broken shader rather than as a missing donor and sends you
+                // to entirely the wrong place. A horn in the wrong brown is a much smaller
+                // problem than a horn that looks like a bug.
+                { "bone",  new[] { "BoneFragments", "TrophyDeer", "wood_beam" } },
+                { "iron",  new[] { "Iron", "IronScrap", "stone_wall_2x1" } },
+
                 // Anything green and growing. A sapling skinned in plank would be a
                 // stick with a plank on top of it.
                 { "moss",  new[] { "sapling_carrot", "sapling_turnip", "Bush01",
