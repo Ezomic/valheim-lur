@@ -1,22 +1,40 @@
+using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using BepInEx;
 using BepInEx.Bootstrap;
 using BepInEx.Logging;
 using Ezomic.Core;
+using Ezomic.Shared;
 using HarmonyLib;
 
 namespace Lur
 {
     /// <summary>
-    /// Lur. One sentence saying what the mod does, then a paragraph saying why it is
-    /// worth having - the design argument, not the feature list. That paragraph is the thing
-    /// future-you reads first.
+    /// Lur: a horn Hildir sells, sounded inside one of her three dungeons to wake what was
+    /// put down there.
     ///
-    /// Say here whether the mod is client-side, and say it in terms of where the work
-    /// happens rather than by habit. "Client-side" means every effect is computed by the
-    /// owning client off state it already has. The moment a decision reads another player's
-    /// progress, writes a shared ZDO, or registers a prefab, it is not client-side any more
-    /// and Requirement.Everyone below is load-bearing.
+    /// The three Hildir dungeons are the only content in the game whose whole point is a
+    /// single fight, and once it is won they are finished forever. That is the right default
+    /// for a world's story and a poor one for a server people keep playing on, because the
+    /// fight is the part worth doing twice and the cosmetic reward is the part that is not.
+    /// Lur separates them: sounding the horn re-arms the dungeon's spent one-shot spawners so
+    /// the boss and everything guarding it walk out again, and touches nothing else. Looted
+    /// chests stay looted, smashed props stay smashed, and Hildir will not accept a second
+    /// turn-in, because her own Trader refuses an offering whose key the world already holds.
+    /// It repopulates; it does not reset. The mod that resets an ordinary crypt is a different
+    /// one, and it deletes things, which is exactly why it is not this one.
+    ///
+    /// Mechanically it is smaller than it sounds. A spent one-shot CreatureSpawner has lost
+    /// nothing - the record of its firing is a connection on a ZDO that is still there - so
+    /// waking it is two field writes, and vanilla's own UpdateSpawner does the rest a second
+    /// later. Lur never destroys a ZDO, never calls DungeonGenerator.Generate and never
+    /// touches terrain, which is the whole of its safety argument and must stay true of this
+    /// DLL rather than merely of one code path inside it.
+    ///
+    /// Not client-side, and the distinction matters here. It registers an item prefab, so a
+    /// client that cannot resolve the hash does not fail loudly - ZNetScene discards the ZDO
+    /// as junk and the horn in somebody's chest is simply gone. That is what makes
+    /// Requirement.Everyone below load-bearing rather than a default.
     ///
     /// There is deliberately no BepInProcess attribute. A dedicated server runs
     /// valheim_server.exe, and Core's gate only refuses on the server side of RPC_PeerInfo -
@@ -60,6 +78,15 @@ namespace Lur
             LurConfig.Bind(Config);
 
             TryRegisterWithCore();
+
+            // Ask the world, never a flag. Prefabs re-registers into every ZNetScene and
+            // ObjectDB that comes into existence - including after a logout to the menu and
+            // back - by checking the live scene each time rather than remembering that it
+            // once succeeded. The flag version answers yes to a scene that has never heard of
+            // the prefab, registration early-returns, and every ZDO of that prefab is
+            // discarded silently. That cost a built piece on 2026-08-16.
+            Prefabs.Log = Logger;
+            Prefabs.Keep(LurItem.Name, LurItem.Build, item: true);
 
             // PatchAll over a named type, never the whole assembly. A bare PatchAll() walks
             // every type in the DLL, so a half-written patch class in another file goes live
@@ -114,17 +141,50 @@ namespace Lur
             // unaffected.
             Suite.Register(PluginGuid, PluginName, PluginVersion, Config, Requirement.Everyone);
 
-            // Registering already absorbs the whole config file, so this is a formality now.
-            // It is still worth writing: naming an entry here is saying out loud that the
-            // host decides it. Keybinds are excluded by Core itself - a host taking away
-            // someone's keys for the evening is the kind of sync that gets a mod uninstalled.
-            Suite.Sync(LurConfig.Enabled);
+            // Registering already absorbs the whole config file, so naming entries here is a
+            // formality. It is still worth writing: it says out loud that the host decides
+            // these, and every one of them is a fact about the world rather than a taste.
+            // Two clients disagreeing about what may be woken, or about how wide a room box
+            // is, is two clients disagreeing about the world's ZDOs.
+            Suite.Sync(LurConfig.Enabled, LurConfig.WakeCrypt, LurConfig.WakeCave,
+                LurConfig.WakeTower, LurConfig.CooldownDays, LurConfig.RoomPadding,
+                LurConfig.WatchSeconds, LurConfig.UseLocationRadiusFallback,
+                LurConfig.Price, LurConfig.Stack, LurConfig.SoldAfterKey);
+
+            // The two that are genuinely personal. Core's sync exempts only KeyCode and
+            // KeyboardShortcut by default and imposes the host's value back over any local
+            // write, so a diagnostic switch left synced would be a host deciding how much
+            // somebody else's log file says. Neither changes anything in the world.
+            Suite.Local(LurConfig.Diagnose, LurConfig.Verbose);
 
             // If the mod reads a data file that decides what it does, hash it too. The gate
             // catches two ends on different builds; it cannot catch two ends running the
             // same build over different text unless it is told.
             //
             //     Suite.Data(File.ReadAllText(path));
+        }
+
+        /// <summary>
+        /// Drives registration. ZNetScene and ObjectDB do not exist at load and are torn down
+        /// and rebuilt on every world, so there is no single moment to hook - the answer is a
+        /// cheap idempotent check every frame rather than a clever one once.
+        /// </summary>
+        private void Update()
+        {
+            Prefabs.Tick();
+        }
+
+        private static readonly HashSet<string> Said = new HashSet<string>();
+
+        /// <summary>
+        /// A warning worth reading once and not once a frame. Registration retries forever by
+        /// design, so anything logged from that path without this turns a missing file into
+        /// tens of thousands of identical lines and buries whatever actually went wrong.
+        /// </summary>
+        internal static void LogOnce(string message)
+        {
+            if (!Said.Add(message)) return;
+            Log.LogWarning(message);
         }
 
         private void OnDestroy()

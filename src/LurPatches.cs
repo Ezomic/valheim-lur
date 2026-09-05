@@ -1,65 +1,167 @@
+using System.Collections;
+using System.Collections.Generic;
 using HarmonyLib;
+using UnityEngine;
 
 namespace Lur
 {
     /// <summary>
     /// The mod's Harmony patches. One class named in the plugin's PatchAll, so nothing goes
-    /// live by being written.
+    /// live merely by being written.
     ///
-    /// Two rules that this file exists to hold in view.
-    ///
-    /// Ride vanilla systems rather than hand-rolling them. The suite's mods do their work by
-    /// reading the game's own tables - Smelter.m_conversion, the Hammer's piece table - and
-    /// by going through Player.PlacePiece so validity stays the game's problem. Keeping new
-    /// features on that seam is what makes them survive a game update; a custom subclass or
-    /// a patch on movement trades that away.
-    ///
-    /// Never guess an API. Read it, with
-    /// <c>ilspycmd -t &lt;Type&gt; -r "&lt;ManagedDir&gt;" "&lt;ManagedDir&gt;\assembly_valheim.dll"</c>,
-    /// or take the numbers off a devkit rip. A wrong method name is a Harmony patch that
-    /// throws once at load and then quietly never runs.
+    /// Three of them, and each is on a seam vanilla already provides rather than on anything
+    /// this mod would have to own: the hotbar's use path, the dungeon's own Awake, and the
+    /// trader's own stock list. Nothing here patches movement, spawning or the zone system.
     /// </summary>
     internal static class LurPatches
     {
-        /// <summary>
-        /// A patch that does nothing, kept so the wiring is proved rather than assumed. It
-        /// is the first thing to check when a mod loads and appears to do nothing at all: if
-        /// this line is absent from the log, the problem is the patch not applying, not the
-        /// logic behind it.
-        /// </summary>
-        [HarmonyPostfix]
-        [HarmonyPatch(typeof(Player), nameof(Player.OnSpawned))]
-        private static void OnSpawned(Player __instance)
-        {
-            // Every player object in the scene runs this, not only yours. Anything meant for
-            // the person at the keyboard needs this line.
-            if (__instance != Player.m_localPlayer) return;
-            if (!LurConfig.Enabled.Value || !LurConfig.Verbose.Value) return;
+        // ------------------------------------------------------------------ sounding it
 
-            LurPlugin.Log.LogInfo("Player spawned - patches are live.");
+        /// <summary>
+        /// Using the horn from the hotbar.
+        ///
+        /// Humanoid.UseItem(Inventory, ItemData, bool) is what Player.UseHotbarItem calls with
+        /// (null, item, fromInventoryGui: false). It returns void, so this prefix returning
+        /// false simply means vanilla's own handling is skipped - which is what we want, since
+        /// vanilla's else-branch would try ToggleEquipped and then tell the player they cannot
+        /// use it.
+        ///
+        /// The whole body is wrapped. A prefix that throws here breaks item use in general -
+        /// every item, not just this one - and it presents as a vanilla bug with a clean
+        /// BepInEx log, because gameplay exceptions land in Player.log instead. Catching costs
+        /// the feature and never the game.
+        /// </summary>
+        [HarmonyPrefix]
+        [HarmonyPatch(typeof(Humanoid), nameof(Humanoid.UseItem))]
+        private static bool UseItem(Humanoid __instance, ItemDrop.ItemData item,
+            bool fromInventoryGui)
+        {
+            try
+            {
+                if (!LurConfig.Enabled.Value) return true;
+                if (__instance == null || __instance != Player.m_localPlayer) return true;
+                if (fromInventoryGui) return true;
+                if (item == null || item.m_dropPrefab == null) return true;
+                if (item.m_dropPrefab.name != LurItem.Name) return true;
+
+                Sounding.Sound(Player.m_localPlayer);
+                return false;
+            }
+            catch (System.Exception e)
+            {
+                LurPlugin.Log.LogError("Sounding the horn threw, so it did nothing: " + e);
+                return true;
+            }
         }
 
-        // Traps worth having in front of you while writing the real ones. All of these were
-        // paid for once already:
-        //
-        //   Character.OnDeath runs on the OWNING CLIENT ONLY. Its own !IsOwner() early
-        //   return is dead code, so the block above it looks like it runs everywhere and
-        //   does not. Anything per-player at a kill has to be done by the owner for
-        //   everybody, e.g. through Player.GetPlayersInRange.
-        //
-        //   SEMan.Internal_AddStatusEffect refreshes an already-running effect in place and
-        //   returns without reaching the public AddStatusEffect overload. Patching only the
-        //   public one misses every refresh.
-        //
-        //   Player.ConsumeItem removes the item whatever EatFood returned. Refuse food in
-        //   CanConsumeItem, which is the gate that path respects; refusing later destroys it.
-        //
-        //   The first ObjectDB.Awake of a session fires against a stub with no items. Gate
-        //   anything that reads the item database on m_items.Count > 0, and hook
-        //   ObjectDB.CopyOtherDB as well - that is the path a client takes on joining a
-        //   server.
-        //
-        //   Writing to a container or ZDO you do not own is silently discarded. Call
-        //   nview.ClaimOwnership() first, which is what vanilla's Take All does.
+        // ------------------------------------------------------------------ diagnostics
+
+        /// <summary>
+        /// One line per Hildir dungeon as it loads, and a full census when Diagnose is on.
+        ///
+        /// This exists because locations are SoftReferences inside ZoneSystem.m_locations and
+        /// sit in neither ZNetScene nor ObjectDB, so a devkit rip answers "Not found" for all
+        /// three of them however real they are. The house rule for that case is to make the
+        /// mod log what it is actually using, and this is that log. It is how the open
+        /// questions get answered: whether the theme-to-generator pairing is what the names
+        /// imply, and whether the Sealed Tower's boss spawner sits inside a generated room at
+        /// all - which is the one thing that decides whether Lur works there.
+        /// </summary>
+        // Awake is private, so the target is named as a string rather than with nameof. That
+        // is the one place in this mod where a typo would not be caught by the compiler: a
+        // wrong name here is a patch that fails to apply at load and then quietly never runs,
+        // which is exactly the failure the startup log line exists to make visible.
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(DungeonGenerator), "Awake")]
+        private static void GeneratorAwake(DungeonGenerator __instance)
+        {
+            try
+            {
+                if (__instance == null) return;
+
+                // Themes are on the component and readable immediately; rooms are not, so the
+                // census has to wait for the async load rather than reporting zero.
+                __instance.StartCoroutine(Census(__instance));
+            }
+            catch (System.Exception e)
+            {
+                LurPlugin.Log.LogError("Dungeon census threw: " + e);
+            }
+        }
+
+        private static IEnumerator Census(DungeonGenerator dg)
+        {
+            // Long enough for LoadRoomPrefabsAsync to have called Spawn on any reasonable
+            // machine. Nothing depends on the number: a dungeon that is still loading logs
+            // zero rooms and says so, which is itself the useful reading.
+            yield return new WaitForSeconds(5f);
+
+            if (dg == null) yield break;
+            if ((dg.m_themes & (Room.Theme.ForestCryptHildir | Room.Theme.CaveHildir
+                                | Room.Theme.PlainsFortHildir)) == 0)
+            {
+                yield break;
+            }
+
+            Room[] rooms = dg.GetComponentsInChildren<Room>();
+            Vector3 at = dg.transform.position;
+
+            LurPlugin.Log.LogInfo(string.Format(
+                "Hildir dungeon: {0} themes={1} at {2} interior={3} rooms={4} enabled={5}",
+                Utils.GetPrefabName(dg.gameObject), dg.m_themes, at,
+                Character.InInterior(at), rooms.Length, Dungeons.Enabled(dg.m_themes)));
+
+            if (!LurConfig.Diagnose.Value) yield break;
+
+            for (int i = 0; i < rooms.Length; i++)
+            {
+                Room room = rooms[i];
+                if (room == null) continue;
+
+                LurPlugin.Log.LogInfo(string.Format("  room {0}: {1} size={2} at {3}",
+                    i, room.name, room.m_size, room.transform.position));
+            }
+
+            // Every spawner near the dungeon, with the verdict that decides whether Lur can
+            // ever reach it. An "outside" verdict on the tower's boss spawner is the evidence
+            // that turns UseLocationRadiusFallback on.
+            List<CreatureSpawner> inside = Dungeons.Spawners(dg);
+            LurPlugin.Log.LogInfo("  spawners inside: " + inside.Count);
+
+            foreach (CreatureSpawner spawner in inside)
+            {
+                ZNetView nview = spawner.GetComponent<ZNetView>();
+                ZDO zdo = nview != null && nview.IsValid() ? nview.GetZDO() : null;
+
+                LurPlugin.Log.LogInfo(string.Format(
+                    "    {0} respawn={1} trigger={2} day={3} night={4} req='{5}' block='{6}' "
+                    + "group='{7}' connection={8}",
+                    Utils.GetPrefabName(spawner.gameObject), spawner.m_respawnTimeMinuts,
+                    spawner.m_triggerDistance, spawner.m_spawnAtDay, spawner.m_spawnAtNight,
+                    spawner.m_requiredGlobalKey, spawner.m_blockingGlobalKey,
+                    spawner.m_spawnGroupID,
+                    zdo != null ? zdo.GetConnectionType().ToString() : "<no zdo>"));
+            }
+        }
+
+        // ------------------------------------------------------------------ the store
+
+        /// <summary>
+        /// Puts the horn on Hildir's shelf. See <see cref="Store"/> for why this is a postfix
+        /// and why the row must be one cached instance.
+        /// </summary>
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(Trader), nameof(Trader.GetAvailableItems))]
+        private static void AvailableItems(Trader __instance, List<Trader.TradeItem> __result)
+        {
+            try
+            {
+                Store.Offer(__instance, __result);
+            }
+            catch (System.Exception e)
+            {
+                LurPlugin.Log.LogError("Offering the horn threw, so it is not stocked: " + e);
+            }
+        }
     }
 }

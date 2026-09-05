@@ -55,8 +55,21 @@
     <Reference Include="assembly_utils"><HintPath>$(ManagedDir)\assembly_utils.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine"><HintPath>$(ManagedDir)\UnityEngine.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine.CoreModule"><HintPath>$(ManagedDir)\UnityEngine.CoreModule.dll</HintPath><Private>false</Private></Reference>
+    <!-- Collider and BoxCollider live here, not in UnityEngine. The item's fallback collider
+         needs them: an ItemDrop carries a Rigidbody, so one that lands with nothing to rest on
+         falls through the world and is gone with no message. -->
+    <Reference Include="UnityEngine.PhysicsModule"><HintPath>$(ManagedDir)\UnityEngine.PhysicsModule.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="BepInEx"><HintPath>$(BepInExCore)\BepInEx.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="0Harmony"><HintPath>$(BepInExCore)\0Harmony.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Shared source, not a library. Registration cannot live in Core's DLL because Core is
+         a soft dependency everywhere and a mod that fails to register its prefab does nothing
+         at all - owning it there would make Core mandatory. A runtime fallback was the other
+         option and costs a second code path that only runs where nobody tests, which is how
+         the ZDO-discarding bug it guards against survived long enough to destroy something. -->
+    <Compile Include="..\core\shared\Prefabs.cs" Link="shared\Prefabs.cs" />
   </ItemGroup>
 
   <ItemGroup>
@@ -69,14 +82,13 @@
   </ItemGroup>
 
   <!--
-    Assets, if the mod has any. Uncomment and drop .obj / .col / .png into assets\; load them
-    relative to Path.GetDirectoryName(typeof(X).Assembly.Location). Rejected design variants
-    belong in assets\variants\ so they are not copied - that folder is not matched here.
-
+    Assets. Loaded relative to Path.GetDirectoryName(typeof(X).Assembly.Location). Rejected
+    design variants belong in assets\variants\ so they are not copied - that folder is not
+    matched here, and dead models were 2.6MB of deploy on another mod before that rule existed.
+  -->
   <ItemGroup>
     <LurAsset Include="assets\*.obj;assets\*.col;assets\*.png" />
   </ItemGroup>
-  -->
 
   <!--
     ContinueOnError, because the game holds the DLL open while it is running and a failed
@@ -87,7 +99,7 @@
   <Target Name="Deploy" AfterTargets="Build" Condition="Exists('$(ProfileDir)\BepInEx\plugins')">
     <MakeDir Directories="$(DeployDir)" />
     <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(DeployDir)" ContinueOnError="true" />
-    <!-- <Copy SourceFiles="@(LurAsset)" DestinationFolder="$(DeployDir)" ContinueOnError="true" /> -->
+    <Copy SourceFiles="@(LurAsset)" DestinationFolder="$(DeployDir)" ContinueOnError="true" />
   </Target>
 
 </Project>
