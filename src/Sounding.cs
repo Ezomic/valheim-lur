@@ -127,10 +127,25 @@ namespace Lur
             long now = (long)ZNet.instance.GetTimeSeconds();
             long dayLength = EnvMan.instance != null ? EnvMan.instance.m_dayLengthSec : 1200L;
             long wait = (long)(days * dayLength);
+            long left = wait - (now - last);
 
-            if (now - last >= wait) return true;
+            if (left <= 0L) return true;
 
-            Refuse(player, "This place has not settled since it was last woken.");
+            // Say how long. "This place has not settled" reads identically at four minutes
+            // and four days, and a refusal a player cannot act on is the one that gets read
+            // as a broken mod - which is the whole reason every other message here names its
+            // cause rather than just declining.
+            //
+            // Rounded up and counted in the game's days, not the wall clock's, because that is
+            // the unit the cooldown is set in: telling somebody "100 minutes" when the config
+            // says 5 would be answering a question they did not ask, in units the setting does
+            // not use, and it would be wrong the moment a mod changes day length.
+            long days_left = (left + dayLength - 1) / dayLength;
+
+            Refuse(player, days_left <= 1L
+                ? "This place has not settled. Not long now."
+                : "This place has not settled. " + days_left + " days yet.");
+
             return false;
         }
 
