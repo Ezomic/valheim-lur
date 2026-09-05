@@ -18,9 +18,13 @@ since the outline is the whole of what survives the slot:
     ox      a deep crescent, thick at the mouth, bound with iron.
     coil    wound once into a closed ring, hunting-horn fashion.
     stave   dead straight, a tapered bone tube with a flared bell and lashings.
+    wolf    the one that ships. A real blowing horn, from a photograph Robbin sent.
 
-An S, a crescent, a ring and a cone. Nothing here is a variation on another one, which
-is the point - if two candidates share an outline there is only one design.
+An S, a crescent, a ring, a cone, and the real thing. Nothing here is a variation on
+another one, which is the point - if two candidates share an outline there is only one
+design. The first four were built before the photograph and are kept because the
+reasoning in them is why wolf is shaped as it is: ox in particular is the same object
+built backwards, and the difference between the two is the whole lesson.
 
 Two materials throughout, "bone" and "iron", and no more. Vanilla timber props are one
 material on one submesh and furniture is two; three or four means wearing three or four
@@ -35,9 +39,10 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bpy
 import math
 
-from mathutils import Vector
+from mathutils import Euler, Vector
 
-from vhbuild import (box, camera, clear_scene, disc, export, finish, limb, render,
+from vhbuild import (box, camera, clear_scene, disc, export, finish, limb, material,
+                     render,
                      reference_cube, ring, stage_scene, taper)
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -45,10 +50,10 @@ SHIPPED = os.path.join(ROOT, "assets")
 ASSETS = os.path.join(SHIPPED, "variants")
 PREVIEWS = os.path.join(ASSETS, "previews")
 
-# Nothing has been picked yet. Setting this to a label exports that one a second time
-# under the shipping names, so the horn you hold and the picture in the slot are the
-# same geometry and cannot drift apart.
-WINNER = None
+# The winner is exported a second time under the shipping names, so the horn you hold
+# and the picture in the slot are the same geometry and cannot drift apart. Everything
+# else stays in variants\, which the build does not copy.
+WINNER = "wolf"
 SHIPPED_MESH = "lur"
 SHIPPED_ICON = "lur.png"
 
@@ -173,11 +178,182 @@ def stave():
     ring(0.044, 0.010, (0.0, 0.0, 0.335), "iron", major=15, minor=5, rot_x=0.0)
 
 
+def sweep(name, mat, length, base_r, tip_r, bend, rings=26, sides=12, taper_power=1.35,
+          origin=(0.0, 0.0, 0.0), lean=0.0, arc_start=0.0, curve_radius=None,
+          cap=True):
+    """
+    A tapering tube swept along a smooth arc, built as one mesh.
+
+    This exists because vhbuild's limb() is the wrong tool for a horn and the first
+    attempt proved it in one render. limb() chains separate cones for gnarled branches,
+    and a chain of cones with a bevel pass on every rim reads as a screw thread - which
+    is exactly what it looked like. Nothing about that is fixable by tuning it: the rings
+    are the segments, and the segments are the point of limb().
+
+    So the body is one mesh with continuous topology. Rings of vertices are placed along
+    a circular arc, each perpendicular to the local tangent, radii interpolated along the
+    length, and consecutive rings bridged with quads. No joins, no rims, no bevel.
+
+    taper_power bends the radius curve. A straight lerp gives a cone, and a cone is not a
+    horn - real horn keeps its width high up and then falls away quickly near the tip,
+    which is what a power above 1 does.
+
+    Returns the tip position, so the mouthpiece can be hung off it without guessing.
+    """
+    import bmesh
+
+    mesh = bpy.data.meshes.new(name)
+    obj = bpy.data.objects.new(name, mesh)
+    bpy.context.collection.objects.link(obj)
+
+    bm = bmesh.new()
+
+    # The arc, in the XZ plane. bend is total turn in degrees over the whole length; the
+    # radius of curvature falls out of it, so length and bend are independent knobs.
+    #
+    # arc_start and curve_radius exist so a second sweep can *continue* the first one's
+    # curve exactly - which is how the mouthpiece is fitted. Rotating a cone onto the end
+    # by hand was the first attempt and it produced a peg sticking out sideways, because
+    # the arc lies in XZ and a tilt toward it is a rotation about Y, not the X that
+    # vhbuild's helpers offer. Continuing the sweep sidesteps the whole question: the
+    # fitting cannot be misaligned because it is the same curve.
+    total = math.radians(max(1.0, bend))
+    if curve_radius is None:
+        curve_radius = length / total
+    start = math.radians(arc_start)
+    lean_rad = math.radians(lean)
+
+    previous = None
+    for i in range(rings):
+        t = i / float(rings - 1)
+        angle = start + total * t
+
+        # Centre of this ring, and the tangent it has to sit square to. Measured from the
+        # arc's own origin, so a continuation lands exactly where its parent ended.
+        cx = curve_radius * (1.0 - math.cos(angle))
+        cz = curve_radius * math.sin(angle)
+        centre = Vector((cx, 0.0, cz))
+
+        tangent = Vector((math.sin(angle), 0.0, math.cos(angle)))
+        tangent.rotate(Euler((0.0, lean_rad, 0.0), "XYZ"))
+        centre.rotate(Euler((0.0, lean_rad, 0.0), "XYZ"))
+        centre += Vector(origin)
+
+        radius = tip_r + (base_r - tip_r) * ((1.0 - t) ** taper_power)
+
+        # Any vector not parallel to the tangent works as an up reference; the horn's arc
+        # never approaches vertical in y, so y is always safe here.
+        side = tangent.cross(Vector((0.0, 1.0, 0.0))).normalized()
+        up = side.cross(tangent).normalized()
+
+        ring_verts = []
+        for s in range(sides):
+            a = 2.0 * math.pi * s / float(sides)
+            offset = side * (math.cos(a) * radius) + up * (math.sin(a) * radius)
+            ring_verts.append(bm.verts.new(centre + offset))
+
+        if previous is not None:
+            for s in range(sides):
+                n = (s + 1) % sides
+                bm.faces.new((previous[s], previous[n], ring_verts[n], ring_verts[s]))
+
+        previous = ring_verts
+
+    # Cap the narrow end only. The bell is open, which is the whole difference between a
+    # horn and a cone - a capped cone is a lid, and it reads as one.
+    if cap:
+        bm.faces.new(previous)
+
+    # Read the tip out before the bmesh is freed. Touching a BMVert afterwards raises
+    # "BMesh data of type BMVert has been removed", which is a real error rather than a
+    # stale value, so it fails loudly - but only at the moment the caller uses the tip.
+    tip = Vector((0.0, 0.0, 0.0))
+    for v in previous:
+        tip += Vector(v.co)
+    tip /= float(len(previous))
+
+    bm.normal_update()
+    bm.to_mesh(mesh)
+    bm.free()
+
+    mesh.materials.append(material(mat))
+
+    return tip
+
+
+def wolf():
+    """
+    The one Robbin picked out: a real blowing horn, from a photograph.
+
+    Everything about it is the opposite way round from `ox`, and that is the whole
+    correction. `ox` is thick where you hold it and tapers to a point, which is a
+    drinking horn drawn from memory. A horn you *blow* is wide at the open end and
+    narrows to the mouthpiece, so the mass sits high and the dark tip is the small end.
+    Getting that backwards is why `ox` reads as a tusk.
+
+    Three things carry it, in the order they matter at slot size:
+
+    The taper. Wide open bell, long gentle single curve, narrow tip - one arc, not a
+    crescent. A deep bend would put the tip back under the bell and close the outline
+    into a claw.
+
+    The dark mouthpiece. Real horn is near-black at the tip and pale at the bell, and
+    that split is worth more than any amount of surface detail: it gives the silhouette
+    a light end and a dark end, so even at 48 pixels the eye knows which way round it is.
+
+    The medallion. A shallow raised disc on the flank, where the photograph has its
+    carved wolf. The carving itself is far below anything that survives being drawn
+    small, and it is not attempted - but the disc catches light along its rim and says
+    "somebody's horn" rather than "a horn", which is the part that does survive.
+
+    Still two materials. The pale body is "bone"; the dark tip, the collar and the
+    medallion are all "iron", which is doing double duty as dark polished horn. Vanilla
+    furniture is two submeshes and timber props are one; three would be wearing a third
+    object's palette for the sake of a detail nobody can resolve.
+    """
+    # One arc, shared by every part of the horn. Body, collar and mouthpiece are three
+    # sweeps along it at different angles, so the fittings cannot drift or sit crooked -
+    # they are literally the same curve, continued.
+    bend = 78.0
+    radius = 0.66 / math.radians(bend)
+
+    # The body: bell at the origin, tapering away. 78 degrees rather than the 37 the
+    # first attempt had - the photograph's horn turns much more than it looks like it
+    # does, and an under-bent horn reads as a tusk.
+    #
+    # Open at the bell, so no cap. A capped cone is a lid and reads as one, and the open
+    # mouth is the whole difference between a horn and a spike.
+    sweep("horn_body", "bone", length=0.66, base_r=0.079, tip_r=0.016, bend=bend,
+          rings=30, sides=13, taper_power=1.45, curve_radius=radius, cap=False)
+
+    # No separate bell lip. The first version had one and it read as a stepped cuff
+    # slipped over the end, because two sweeps meeting at a shared radius still show
+    # their seam under flat shading. The body's own taper is the bell.
+
+    # The collar, then the mouthpiece: short continuations of the same arc, starting
+    # where the body ends. The collar is slightly proud of the body, which is what makes
+    # the dark tip read as pushed on rather than as a shadow.
+    sweep("horn_collar", "iron", length=0.030, base_r=0.023, tip_r=0.021, bend=3.6,
+          rings=4, sides=13, taper_power=1.0, arc_start=bend - 2.0, curve_radius=radius,
+          cap=False)
+
+    sweep("horn_mouth", "iron", length=0.075, base_r=0.019, tip_r=0.015, bend=9.0,
+          rings=8, sides=11, taper_power=1.0, arc_start=bend + 1.0, curve_radius=radius)
+
+    # The medallion, on the flank below the bell, on the outside of the curve where the
+    # light is. A shallow plate and a slightly wider backing ring for the beaded border -
+    # at icon size the border is the only part of the carving that reads at all, and the
+    # carving itself is far below anything that survives being drawn small.
+    disc(0.042, 0.005, (0.016, -0.058, 0.130), "iron", sides=17, rot_x=90.0)
+    disc(0.032, 0.008, (0.016, -0.062, 0.130), "bone", sides=17, rot_x=90.0)
+
+
 DESIGNS = [
     ("bronze", bronze),
     ("ox", ox),
     ("coil", coil),
     ("stave", stave),
+    ("wolf", wolf),
 ]
 
 
