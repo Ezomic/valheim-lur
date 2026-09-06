@@ -188,6 +188,7 @@ namespace Lur
             var cleared = new List<Cleared>();
 
             List<CreatureSpawner> spawners = Dungeons.Spawners(dg);
+            List<CreatureSpawner> bosses = Dungeons.BossSpawners(dg);
             CreatureSpawner boss = Dungeons.Boss(dg);
 
             if (boss == null)
@@ -203,30 +204,44 @@ namespace Lur
                 return cleared;
             }
 
-            // Judge the boss before writing anything at all. Clearing its groupmates first and
-            // then discovering the boss itself is blocked would leave the dungeon's population
-            // altered for nothing - the one outcome this mod must never produce.
-            string refusal;
-            if (!Clearable(boss, out refusal))
+            // Every boss spawner and every groupmate of one, because a dungeon does not have
+            // "the" boss spawner - it has a set of candidate positions in one spawn group with
+            // m_maxGroupSpawned 1, of which vanilla fired exactly one. Six of the Howling
+            // Cavern's seven have never fired and have nothing to un-spend; the seventh is the
+            // one holding the group shut, and ZDOMan.ConnectSpawners leaves it as Spawned with
+            // a null target once its creature is gone.
+            //
+            // Picking one spawner and judging it was the bug: the nearest is usually one of the
+            // six, so Lur refused with "it is already awake" while the spawner that actually
+            // needed clearing sat untouched. The unit of work is the group.
+            var targets = new List<CreatureSpawner>();
+            foreach (CreatureSpawner candidate in bosses)
             {
-                LurPlugin.Log.LogInfo(Dungeons.Describe(dg) + ": boss spawner not clearable - "
-                                      + refusal);
-                Refuse(player, refusal);
-                return cleared;
+                if (!targets.Contains(candidate)) targets.Add(candidate);
+
+                foreach (CreatureSpawner mate in Dungeons.Groupmates(candidate, spawners))
+                    if (!targets.Contains(mate)) targets.Add(mate);
             }
 
-            var targets = new List<CreatureSpawner> { boss };
-
-            List<CreatureSpawner> mates = Dungeons.Groupmates(boss, spawners);
-            if (mates.Count > 0)
+            // Nothing is written unless at least one target is actually spent. Clearing an
+            // already-armed spawner is a no-op that would still spend the horn.
+            string refusal = "Nothing sleeps here.";
+            bool any = false;
+            foreach (CreatureSpawner candidate in targets)
             {
-                LurPlugin.Log.LogInfo(string.Format(
-                    "{0}: the boss shares spawn group {1} with {2} other spawner(s), so they "
-                    + "are woken with it - the group counts spawnedEver across all members and "
-                    + "a spent neighbour would keep the boss blocked.",
-                    Dungeons.Describe(dg), boss.m_spawnGroupID, mates.Count));
+                string why;
+                if (!Clearable(candidate, out why)) { refusal = why; continue; }
 
-                targets.AddRange(mates);
+                any = true;
+                break;
+            }
+
+            if (!any)
+            {
+                LurPlugin.Log.LogInfo(Dungeons.Describe(dg) + ": none of " + targets.Count
+                    + " boss/group spawner(s) can be cleared - " + refusal);
+                Refuse(player, refusal);
+                return cleared;
             }
 
             foreach (CreatureSpawner spawner in targets)
@@ -256,13 +271,10 @@ namespace Lur
                 cleared.Add(new Cleared { Zdo = zdo, Type = type, Target = target });
             }
 
-            if (LurConfig.Verbose.Value || cleared.Count == 0)
-            {
-                LurPlugin.Log.LogInfo(string.Format(
-                    "{0}: {1} spawner(s) present, boss is {2}, cleared {3}.",
-                    Dungeons.Describe(dg), spawners.Count,
-                    Utils.GetPrefabName(boss.gameObject), cleared.Count));
-            }
+            LurPlugin.Log.LogInfo(string.Format(
+                "{0}: {1} spawner(s) present, {2} hold a boss, {3} in the group, cleared {4}.",
+                Dungeons.Describe(dg), spawners.Count, bosses.Count, targets.Count,
+                cleared.Count));
 
             if (cleared.Count == 0) Refuse(player, "Nothing sleeps here.");
 

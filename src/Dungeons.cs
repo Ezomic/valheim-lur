@@ -243,6 +243,16 @@ namespace Lur
         /// possibility until the diagnostic pass has been run in all three. The caller refuses
         /// and says so rather than falling back to waking everything.
         /// </summary>
+        /// <summary>Every spawner in this dungeon that holds a boss.</summary>
+        internal static List<CreatureSpawner> BossSpawners(DungeonGenerator dg)
+        {
+            var found = new List<CreatureSpawner>();
+            foreach (CreatureSpawner spawner in Spawners(dg))
+                if (IsBoss(spawner)) found.Add(spawner);
+
+            return found;
+        }
+
         internal static CreatureSpawner Boss(DungeonGenerator dg)
         {
             var found = new List<CreatureSpawner>();
