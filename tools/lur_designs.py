@@ -208,6 +208,13 @@ def sweep(name, mat, length, base_r, tip_r, bend, rings=26, sides=12, taper_powe
 
     bm = bmesh.new()
 
+    # A UV layer, made up front, because a swept mesh has none by construction and the first
+    # version shipped without one. Every face then exported as f 1/1/1 - one shared UV index for
+    # the whole horn - so the borrowed vanilla material sampled a single texel and the model came
+    # out a flat wash of one colour. It looked right in Blender, where the preview material does
+    # not care, and wrong in game, where every surface is a strip of an atlas.
+    uvs = bm.loops.layers.uv.new()
+
     # The arc, in the XZ plane. bend is total turn in degrees over the whole length; the
     # radius of curvature falls out of it, so length and bend are independent knobs.
     #
@@ -224,6 +231,7 @@ def sweep(name, mat, length, base_r, tip_r, bend, rings=26, sides=12, taper_powe
     lean_rad = math.radians(lean)
 
     previous = None
+    previous_v = 0.0
     for i in range(rings):
         t = i / float(rings - 1)
         angle = start + total * t
@@ -255,14 +263,34 @@ def sweep(name, mat, length, base_r, tip_r, bend, rings=26, sides=12, taper_powe
         if previous is not None:
             for s in range(sides):
                 n = (s + 1) % sides
-                bm.faces.new((previous[s], previous[n], ring_verts[n], ring_verts[s]))
+
+                face = bm.faces.new((previous[s], previous[n], ring_verts[n], ring_verts[s]))
+
+                # Cylinder projection: u around the ring, v along the sweep. Taken per face
+                # rather than per vertex so the seam can run from 1.0 back to 0.0 without the
+                # last column of quads being stretched the whole way round the horn.
+                u0 = s / float(sides)
+                u1 = (s + 1) / float(sides)
+
+                face.loops[0][uvs].uv = (u0, previous_v)
+                face.loops[1][uvs].uv = (u1, previous_v)
+                face.loops[2][uvs].uv = (u1, t)
+                face.loops[3][uvs].uv = (u0, t)
 
         previous = ring_verts
+        previous_v = t
 
     # Cap the narrow end only. The bell is open, which is the whole difference between a
     # horn and a cone - a capped cone is a lid, and it reads as one.
     if cap:
-        bm.faces.new(previous)
+        cap_face = bm.faces.new(previous)
+
+        # The cap is a disc, so it gets a disc's own unwrap rather than a slice of the tube's.
+        # Small and end-on, so precision here buys nothing - what it buys is not sampling the
+        # single texel the whole mesh used to share.
+        for index, loop in enumerate(cap_face.loops):
+            a = 2.0 * math.pi * index / float(len(cap_face.loops))
+            loop[uvs].uv = (0.5 + 0.5 * math.cos(a), 0.5 + 0.5 * math.sin(a))
 
     # Read the tip out before the bmesh is freed. Touching a BMVert afterwards raises
     # "BMesh data of type BMVert has been removed", which is a real error rather than a
