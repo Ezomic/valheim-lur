@@ -93,13 +93,24 @@ namespace Lur
             List<Cleared> cleared = Wake(dg, player);
             if (cleared.Count == 0) return false;
 
+            // Name what was woken, always, not behind Verbose. A horn spent on the wrong
+            // spawner and a horn spent on the right one produced identical logs, which is how
+            // an evening went on "the boss did not appear" with no way to tell whether the mod
+            // picked wrong or the creature walked off.
+            CreatureSpawner boss = Dungeons.Boss(dg);
+            GameObject wanted = boss != null ? boss.m_creaturePrefab : null;
+
             LurPlugin.Log.LogInfo("Sounded in " + Dungeons.Describe(dg) + " - re-armed "
-                                  + cleared.Count + " spawner(s), watching.");
+                + cleared.Count + " spawner(s), boss spawner "
+                + (boss != null ? Utils.GetPrefabName(boss.gameObject) : "<none>")
+                + " at " + (boss != null ? boss.transform.position.ToString("F1") : "-")
+                + " holding " + (wanted != null ? wanted.name : "<none>") + ", watching.");
 
             Effect(at);
 
             Watch watch = dg.gameObject.AddComponent<Watch>();
-            watch.Begin(cleared, generator, player);
+            watch.Begin(cleared, generator, player,
+                wanted != null ? wanted.name.GetStableHashCode() : 0);
             return true;
         }
 
@@ -419,12 +430,15 @@ namespace Lur
         private List<Sounding.Cleared> _cleared;
         private ZDO _generator;
         private Player _player;
+        private int _wanted;
 
-        internal void Begin(List<Sounding.Cleared> cleared, ZDO generator, Player player)
+        internal void Begin(List<Sounding.Cleared> cleared, ZDO generator, Player player,
+            int wantedPrefabHash)
         {
             _cleared = cleared;
             _generator = generator;
             _player = player;
+            _wanted = wantedPrefabHash;
             StartCoroutine(Run());
         }
 
@@ -442,6 +456,12 @@ namespace Lur
                         continue;
                     }
 
+                    // A Spawned connection proves something was created. It does not prove the
+                    // boss was, and those were indistinguishable until an evening was spent on
+                    // the difference. Resolve what actually appeared and check it is the
+                    // creature the boss spawner holds.
+                    if (!IsWanted(record)) { Done(); yield break; }
+
                     Sounding.Succeeded(_generator, _player);
                     Done();
                     yield break;
@@ -452,6 +472,40 @@ namespace Lur
 
             Sounding.TimedOut(_cleared, _player);
             Done();
+        }
+
+        /// <summary>
+        /// Whether the thing that spawned is the thing the horn was sounded for.
+        ///
+        /// On a mismatch the horn is <b>not</b> consumed and the connections are <b>not</b>
+        /// rolled back. Not consuming is the honest half: the player did not get what they
+        /// paid for. Not rolling back is the safe half, and it is the less obvious one - the
+        /// spawn has already happened, so restoring the old spent mark would leave a live
+        /// creature beside a spawner free to make another, and duplicating a boss is a worse
+        /// outcome than an unexplained horn. The log carries the explanation instead.
+        /// </summary>
+        private bool IsWanted(Sounding.Cleared record)
+        {
+            if (_wanted == 0) return true;
+
+            ZDOID target = record.Zdo.GetConnectionZDOID(ZDOExtraData.ConnectionType.Spawned);
+            if (target.IsNone()) return true;
+
+            ZDO made = ZDOMan.instance.GetZDO(target);
+            if (made == null) return true;
+
+            if (made.GetPrefab() == _wanted) return true;
+
+            LurPlugin.Log.LogError("Something spawned, but not what the horn was for - "
+                + "expected prefab hash " + _wanted + ", got " + made.GetPrefab()
+                + " at " + made.GetPosition().ToString("F1")
+                + ". The horn was not spent. This means the boss spawner was mis-identified, "
+                + "so turn on Diagnose and report the census.");
+
+            if (_player != null)
+                _player.Message(MessageHud.MessageType.Center, "Something else stirs.");
+
+            return false;
         }
 
         private void Done()
