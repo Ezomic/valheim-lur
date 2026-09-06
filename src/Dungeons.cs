@@ -218,13 +218,20 @@ namespace Lur
         /// <summary>
         /// The spawner that holds the mini-boss, or null.
         ///
-        /// <b>Identified by what the creature does to the world, not by its name.</b> A boss
-        /// here is a creature whose Character carries a non-empty m_defeatSetGlobalKey - the
-        /// field that, on death, writes both a per-player unique key and a world global key.
-        /// That is exactly what "the boss" means in these three dungeons: the one whose death
-        /// the world remembers. Robbin's own dedicated save carries bosshildir1 and
-        /// bosshildir3 alongside defeated_eikthyr, and nothing but m_defeatSetGlobalKey writes
-        /// that pair of forms, so the field is set on these creatures.
+        /// <b>Identified by the game's own boss flag, not by the key its death writes.</b>
+        ///
+        /// The first version tested only for a non-empty Character.m_defeatSetGlobalKey, on the
+        /// reasoning that "the boss is the one whose death the world remembers". That is wrong,
+        /// and the Howling Cavern proved it in one horn: Bat carries m_defeatSetGlobalKey
+        /// "KilledBat", which is a real member of the GlobalKeys enum, so every bat in the cave
+        /// passed the test. Boss() returned the first match in scene order, Lur re-armed a bat
+        /// spawner, a bat spawned, the watch saw a Spawned connection and spent the horn.
+        /// KilledTroll and killed_surtling are the same trap waiting in other dungeons.
+        ///
+        /// Character.m_boss is the flag the game itself uses for this, so it is asked. The
+        /// defeat key is kept as a second condition rather than dropped: a boss with no key is
+        /// not one of Hildir's three, and requiring both is what makes a mis-identification
+        /// need two independent mistakes in the asset data rather than one.
         ///
         /// The rejected alternative was a list of spawner prefab names. It would work today
         /// and it would be wrong in principle - the whole reason selection is theme bits
@@ -238,13 +245,40 @@ namespace Lur
         /// </summary>
         internal static CreatureSpawner Boss(DungeonGenerator dg)
         {
+            var found = new List<CreatureSpawner>();
             foreach (CreatureSpawner spawner in Spawners(dg))
+                if (IsBoss(spawner)) found.Add(spawner);
+
+            if (found.Count == 0) return null;
+
+            // More than one is normal, not an error. The Howling Cavern places seven cultist
+            // spawners in one spawn group with m_maxGroupSpawned 1 - candidate positions, of
+            // which vanilla fires exactly one. Any of them is the right answer to "which
+            // spawner is the boss", and Groupmates then re-arms the rest of the group, which is
+            // what actually makes the group able to fire again.
+            //
+            // Nearest to the player rather than first in scene order, because scene order is
+            // load order and is not stable between sessions - so a wrong pick would be
+            // unreproducible, which is the worst kind.
+            if (found.Count == 1) return found[0];
+
+            Player player = Player.m_localPlayer;
+            if (player == null) return found[0];
+
+            CreatureSpawner best = found[0];
+            float nearest = float.MaxValue;
+
+            foreach (CreatureSpawner spawner in found)
             {
-                if (!IsBoss(spawner)) continue;
-                return spawner;
+                float away = Vector3.Distance(player.transform.position,
+                                              spawner.transform.position);
+                if (away >= nearest) continue;
+
+                nearest = away;
+                best = spawner;
             }
 
-            return null;
+            return best;
         }
 
         /// <summary>Whether this spawner's creature is one whose death the world records.</summary>
@@ -256,6 +290,8 @@ namespace Lur
             Character character;
             if (!spawner.m_creaturePrefab.TryGetComponent(out character)) return false;
             if (character == null) return false;
+
+            if (!character.m_boss) return false;
 
             return !string.IsNullOrEmpty(character.m_defeatSetGlobalKey);
         }
