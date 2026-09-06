@@ -396,6 +396,7 @@ def preview_scene(obj):
     hand, so it is staged at the distance a hand would hold it, and the reference is a
     block the size of a fist rather than a cube the size of a doorway.
     """
+    paint()
     stage_scene(sun=1.4)
 
     corners = [obj.matrix_world @ Vector(c) for c in obj.bound_box]
@@ -413,6 +414,48 @@ def preview_scene(obj):
     camera((0.62, -0.95, 0.52), (centre[0], centre[1], centre[2]), lens=50)
 
 
+def paint():
+    """
+    Colours the two materials for a render.
+
+    Only the renders need this. The world model borrows vanilla materials at runtime through
+    Skins, so its colour comes from the game and nothing here reaches it - but an icon is a
+    picture, and a picture has to carry its own paint. The first one shipped without any: both
+    groups came out at Blender's default grey, so the inventory showed a grey horn while the
+    photograph it was modelled from is cream and near-black. vhbuild's TINTS table has no "bone"
+    entry, and nothing called tint() either, so it was grey twice over.
+
+    Set here rather than in the shared TINTS table because these two values are this mod's
+    reading of one photograph, not a palette anything else should inherit - and "iron" here is
+    doing double duty as polished dark horn, which is much darker than iron ought to be.
+    """
+    colours = {
+        # Pale ivory. The horn's body is the lightest thing in the inventory grid, which is
+        # most of what makes it findable next to coins and a key.
+        "bone": (0.87, 0.83, 0.72, 1.0),
+
+        # Near-black, not grey. The mouthpiece and the medallion are polished horn in the
+        # photograph, and the light-to-dark split along the length is the silhouette's only
+        # internal landmark at 48 pixels.
+        "iron": (0.07, 0.07, 0.08, 1.0),
+    }
+
+    for mat in bpy.data.materials:
+        key = mat.name.split(".")[0].lower()
+        if key not in colours:
+            continue
+
+        mat.use_nodes = True
+        bsdf = mat.node_tree.nodes.get("Principled BSDF")
+        if not bsdf:
+            continue
+
+        bsdf.inputs["Base Color"].default_value = colours[key]
+
+        # Horn is polished but not a mirror. Left at Blender's default it reads as plastic.
+        bsdf.inputs["Roughness"].default_value = 0.42
+
+
 def icon_scene(obj):
     """
     Orthographic, three quarters on, transparent, fitted.
@@ -424,6 +467,8 @@ def icon_scene(obj):
     Suns, not area lights. Area lights a metre from a 20cm object blow every channel to
     white, and the tell is dark brown rendering as pale beige.
     """
+    paint()
+
     scene = bpy.context.scene
     scene.render.film_transparent = True
 
