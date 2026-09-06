@@ -135,6 +135,30 @@ namespace Lur
                 Object.DestroyImmediate(renderer);
             }
 
+            // Then the light and the sparkle, which are not the mesh and do not go with it.
+            //
+            // A dropped horn glowed. The default donor is SurtlingCore, and what makes a surtling
+            // core visibly glow is a child Light plus a particle flare - the emission is a
+            // separate object, not the material - so stripping renderers left the whole light rig
+            // behind on an item made of bone. This is the trap CLAUDE.md records for Strip(),
+            // which removes MonoBehaviours and colliders and deliberately not ParticleSystems.
+            //
+            // Components rather than their GameObjects, for the same reason as above: on some
+            // donors those children carry other things. A Light with no Light component emits
+            // nothing, and that is the whole requirement.
+            //
+            // Done here rather than by choosing a duller donor, because the donor is a config
+            // entry and the next one somebody picks should not be able to reintroduce this.
+            foreach (Light light in clone.GetComponentsInChildren<Light>(true))
+                if (light != null) Object.DestroyImmediate(light);
+
+            foreach (ParticleSystem particles in clone.GetComponentsInChildren<ParticleSystem>(true))
+                if (particles != null) Object.DestroyImmediate(particles);
+
+            foreach (ParticleSystemRenderer drawn
+                     in clone.GetComponentsInChildren<ParticleSystemRenderer>(true))
+                if (drawn != null) Object.DestroyImmediate(drawn);
+
             var visual = new GameObject("lur_visual");
             visual.transform.SetParent(clone.transform, false);
 

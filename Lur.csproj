@@ -55,6 +55,10 @@
     <Reference Include="assembly_utils"><HintPath>$(ManagedDir)\assembly_utils.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine"><HintPath>$(ManagedDir)\UnityEngine.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine.CoreModule"><HintPath>$(ManagedDir)\UnityEngine.CoreModule.dll</HintPath><Private>false</Private></Reference>
+    <!-- ParticleSystem lives here. The donor's glow is a child Light plus a particle flare
+         rather than anything in its material, so stripping renderers alone left a dropped
+         horn shining. -->
+    <Reference Include="UnityEngine.ParticleSystemModule"><HintPath>$(ManagedDir)\UnityEngine.ParticleSystemModule.dll</HintPath><Private>false</Private></Reference>
     <!-- Collider and BoxCollider live here, not in UnityEngine. The item's fallback collider
          needs them: an ItemDrop carries a Rigidbody, so one that lands with nothing to rest on
          falls through the world and is gone with no message. -->
