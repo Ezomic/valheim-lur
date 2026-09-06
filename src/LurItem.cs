@@ -71,10 +71,11 @@ namespace Lur
             ItemDrop.ItemData.SharedData shared = drop.m_itemData.m_shared;
 
             shared.m_name = LurConfig.ItemName.Value;
-            shared.m_description =
-                "A long horn of turned bone and iron. Hildir's, or hers to sell. Sounded in "
-                + "one of the three tombs she sent you to, it carries far enough to wake what "
-                + "was put down there - and nothing else. What was taken stays taken.";
+            // One line, by request. The tooltip used to carry the honesty lines too - that it
+            // wakes the boss and nothing else, and that what was taken stays taken - and those
+            // now live in the README alone. Worth knowing if a player ever asks why their
+            // chests are still empty: the item no longer says.
+            shared.m_description = "A long horn of turned bone and iron.";
 
             // Material, not Consumable: Consumable routes UseItem into ConsumeItem and the
             // eat animation, and Consumable is also the branch that destroys the item whatever
