@@ -372,8 +372,20 @@ def wolf():
     # light is. A shallow plate and a slightly wider backing ring for the beaded border -
     # at icon size the border is the only part of the carving that reads at all, and the
     # carving itself is far below anything that survives being drawn small.
-    disc(0.042, 0.005, (0.016, -0.058, 0.130), "iron", sides=17, rot_x=90.0)
-    disc(0.032, 0.008, (0.016, -0.062, 0.130), "bone", sides=17, rot_x=90.0)
+    # A dark rim just proud of a pale roundel. The backing was 10mm wider than the face and
+    # emerged from the curved flank on one side only, which read as a shadow cast by a button
+    # rather than as a border - the tell being that it was a crescent instead of a ring. 4mm of
+    # difference is enough to draw a rim and not enough to escape.
+    # Sat far enough out to clear the flank entirely.
+    #
+    # The first two attempts read as a pale button with a dark crescent behind it, and the
+    # radius was never the problem. The horn tapers, so its flank is a cone rather than a
+    # cylinder: a disc held flat against -Y buries the edge toward the thick end and leaves the
+    # edge toward the thin end standing proud, which draws exactly that crescent. Moving it out
+    # until the whole disc clears is the fix; tilting it to the local surface angle would be the
+    # other one and costs a frame calculation for a detail that is four pixels in the slot.
+    disc(0.036, 0.004, (0.016, -0.070, 0.130), "iron", sides=17, rot_x=90.0)
+    disc(0.032, 0.008, (0.016, -0.073, 0.130), "bone", sides=17, rot_x=90.0)
 
 
 DESIGNS = [
@@ -468,6 +480,16 @@ def icon_scene(obj):
     white, and the tell is dark brown rendering as pale beige.
     """
     paint()
+
+    # Turned to match the photograph: bell up and to the right, dark mouthpiece down and to
+    # the left. The sweep is built from the bell at the origin curving away toward +X, which
+    # photographs the other way round - correct object, upside-down portrait.
+    #
+    # Done to the object for the render rather than to the mesh, because the mesh's own
+    # orientation is what the held and dropped horn use and that is a separate question with
+    # its own rule: item prefabs lie face-up, not standing.
+    obj.rotation_euler = (0.0, math.radians(180.0), 0.0)
+    bpy.context.view_layer.update()
 
     scene = bpy.context.scene
     scene.render.film_transparent = True
