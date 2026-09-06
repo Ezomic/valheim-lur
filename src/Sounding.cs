@@ -108,7 +108,17 @@ namespace Lur
 
             Effect(at);
 
+            // Watch the whole group, not only what was cleared.
+            //
+            // A grouped spawner does not spawn its own creature: UpdateSpawner calls
+            // m_spawnGroup.SpawnWeighted(), which picks a weighted member from the whole group
+            // and calls Spawn() on that one - and Spawn writes the connection on the ZDO of
+            // whichever member won, not on the one Lur re-armed. Watching only the cleared
+            // spawner therefore misses every success where the roulette landed elsewhere, which
+            // is 38 times out of 39 in the Howling Cavern. It timed out, rolled back and
+            // reported "nothing stirred" while a Fenring was standing somewhere in the cave.
             Watch watch = dg.gameObject.AddComponent<Watch>();
+            watch.Observe = Observable(Dungeons.BossSpawners(dg), Dungeons.Spawners(dg));
             watch.Begin(cleared, generator, player,
                 wanted != null ? wanted.name.GetStableHashCode() : 0);
             return true;
@@ -338,6 +348,33 @@ namespace Lur
             return nview.GetZDO();
         }
 
+        /// <summary>
+        /// Every ZDO that could carry the news that the boss spawned: each boss spawner and
+        /// each of their groupmates. The roulette in Group.SpawnWeighted can land on any of
+        /// them, and the winner is the one that records the spawn.
+        /// </summary>
+        private static List<ZDO> Observable(List<CreatureSpawner> bosses,
+            List<CreatureSpawner> all)
+        {
+            var seen = new List<CreatureSpawner>();
+            foreach (CreatureSpawner boss in bosses)
+            {
+                if (!seen.Contains(boss)) seen.Add(boss);
+
+                foreach (CreatureSpawner mate in Dungeons.Groupmates(boss, all))
+                    if (!seen.Contains(mate)) seen.Add(mate);
+            }
+
+            var zdos = new List<ZDO>();
+            foreach (CreatureSpawner spawner in seen)
+            {
+                ZDO zdo = ZdoOf(spawner);
+                if (zdo != null) zdos.Add(zdo);
+            }
+
+            return zdos;
+        }
+
         private static bool Blocked(CreatureSpawner spawner)
         {
             List<string> keys = ZoneSystem.instance.GetGlobalKeys();
@@ -444,6 +481,9 @@ namespace Lur
         private Player _player;
         private int _wanted;
 
+        /// <summary>Every ZDO that might record the spawn. Set before Begin.</summary>
+        internal List<ZDO> Observe;
+
         internal void Begin(List<Sounding.Cleared> cleared, ZDO generator, Player player,
             int wantedPrefabHash)
         {
@@ -460,19 +500,22 @@ namespace Lur
 
             while (Time.time < deadline)
             {
-                foreach (Sounding.Cleared record in _cleared)
+                List<ZDO> watching = Observe != null && Observe.Count > 0
+                    ? Observe : Cleared();
+
+                foreach (ZDO zdo in watching)
                 {
-                    if (record.Zdo == null) continue;
-                    if (record.Zdo.GetConnectionType() != ZDOExtraData.ConnectionType.Spawned)
-                    {
-                        continue;
-                    }
+                    if (zdo == null) continue;
+                    if (zdo.GetConnectionType() != ZDOExtraData.ConnectionType.Spawned) continue;
+
+                    ZDOID target = zdo.GetConnectionZDOID(ZDOExtraData.ConnectionType.Spawned);
+                    if (target.IsNone()) continue;
 
                     // A Spawned connection proves something was created. It does not prove the
                     // boss was, and those were indistinguishable until an evening was spent on
                     // the difference. Resolve what actually appeared and check it is the
                     // creature the boss spawner holds.
-                    if (!IsWanted(record)) { Done(); yield break; }
+                    if (!IsWanted(zdo, target)) continue;
 
                     Sounding.Succeeded(_generator, _player);
                     Done();
@@ -496,12 +539,18 @@ namespace Lur
         /// creature beside a spawner free to make another, and duplicating a boss is a worse
         /// outcome than an unexplained horn. The log carries the explanation instead.
         /// </summary>
-        private bool IsWanted(Sounding.Cleared record)
+        private List<ZDO> Cleared()
+        {
+            var zdos = new List<ZDO>();
+            foreach (Sounding.Cleared record in _cleared)
+                if (record.Zdo != null) zdos.Add(record.Zdo);
+
+            return zdos;
+        }
+
+        private bool IsWanted(ZDO zdo, ZDOID target)
         {
             if (_wanted == 0) return true;
-
-            ZDOID target = record.Zdo.GetConnectionZDOID(ZDOExtraData.ConnectionType.Spawned);
-            if (target.IsNone()) return true;
 
             ZDO made = ZDOMan.instance.GetZDO(target);
             if (made == null) return true;
