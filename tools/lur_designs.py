@@ -20,11 +20,22 @@ since the outline is the whole of what survives the slot:
     stave   dead straight, a tapered bone tube with a flared bell and lashings.
     wolf    the one that ships. A real blowing horn, from a photograph Robbin sent.
 
+    scroll  a ram's horn, wound inward through a turn and a bit, tightening as it goes.
+    twin    the pair, two arms off one mouthpiece block and braced across.
+    crook   a long straight shaft that turns hard into its bell at one end only.
+
 An S, a crescent, a ring, a cone, and the real thing. Nothing here is a variation on
 another one, which is the point - if two candidates share an outline there is only one
 design. The first four were built before the photograph and are kept because the
 reasoning in them is why wolf is shaped as it is: ox in particular is the same object
 built backwards, and the difference between the two is the whole lesson.
+
+The last three came later and answer a different question. wolf is settled and shipped,
+so they are not attempts to beat it on its own terms - a second gentle arc would only
+be wolf drawn worse. They take the three outlines the first five left unclaimed: mass
+instead of a line, symmetry instead of a hook, and one hard turn instead of an even one.
+All three are built on run() rather than on a single sweep, because each changes its
+curvature along its length and a sweep is a circle.
 
 Two materials throughout, "bone" and "iron", and no more. Vanilla timber props are one
 material on one submesh and furniture is two; three or four means wearing three or four
@@ -56,6 +67,14 @@ PREVIEWS = os.path.join(ASSETS, "previews")
 WINNER = "wolf"
 SHIPPED_MESH = "lur"
 SHIPPED_ICON = "lur.png"
+
+# How far each candidate is turned for its portrait, where it is not the usual half turn.
+# Only the ones built standing the other way up need an entry, and wolf must never get one:
+# the shipped icon is rendered through this path, and the last time its angle was re-derived
+# from parameters it came back subtly different from the picture that had been approved.
+ICON_TURN = {
+    "twin": 0.0,
+}
 
 
 # --------------------------------------------------------------------------- shapes
@@ -309,6 +328,101 @@ def sweep(name, mat, length, base_r, tip_r, bend, rings=26, sides=12, taper_powe
     return tip
 
 
+def run(name, mat, start, heading, length, bend, base_r, tip_r, rings=None, sides=13,
+        taper_power=1.0, cap=False):
+    """
+    One length of horn with a curvature of its own, laid exactly on the end of the last.
+
+    sweep() draws a circular arc, so a horn whose curvature changes along its length -
+    a scroll that tightens as it winds, a shaft that runs straight and then turns hard
+    into its bell - cannot be one sweep. It has to be several, and the joins are the
+    whole difficulty. A second sweep positioned by eye is the peg sticking out sideways
+    that the mouthpiece already cost once, and no amount of nudging the numbers fixes
+    it, because the error is in what is being lined up rather than in how well.
+
+    sweep's own arc_start and lean solve it outright. At arc_start 0 the arc passes
+    exactly through its origin and its tangent there is `lean` degrees off +Z, so a run
+    that starts at the previous run's end point, leaning along the heading the previous
+    run left on, continues that curve exactly - however different its radius of
+    curvature. Nothing is measured off a render and nothing can drift.
+
+    Headings are degrees from +Z toward +X, the convention the arc already uses inside
+    sweep, and bend is always a turn in that direction. A horn that should curl the
+    other way is aimed the other way round rather than given a negative bend, which
+    sweep clamps away.
+
+    Returns the point and heading it ended on, ready for the next run.
+    """
+    turn = math.radians(max(1.0, bend))
+    radius = length / turn
+
+    # Rings from the turn rather than per call. Twelve degrees a ring is below where the
+    # facets read on a tube this thin, and a run that is nearly straight has no use for
+    # thirty rings to say so.
+    if rings is None:
+        rings = max(4, int(bend / 12.0) + 3)
+
+    sweep(name, mat, length=length, base_r=base_r, tip_r=tip_r, bend=bend, rings=rings,
+          sides=sides, taper_power=taper_power, origin=tuple(start), lean=heading,
+          arc_start=0.0, curve_radius=radius, cap=cap)
+
+    # Where the arc came out, in the same frame sweep put it. Read from the arc rather
+    # than from sweep's returned tip, which is the centre of the last ring and therefore
+    # already a millimetre or two off the curve on a tight bend.
+    end = Vector((radius * (1.0 - math.cos(turn)), 0.0, radius * math.sin(turn)))
+    end.rotate(Euler((0.0, math.radians(heading), 0.0), "XYZ"))
+
+    return Vector(start) + end, heading + bend
+
+
+def band(name, at, heading, radius, length=0.022, bend=5.0):
+    """
+    A short iron sleeve sitting proud on the curve, dropped at a join.
+
+    Rings were the first attempt and a torus is the wrong object here: its own axis has
+    to be aimed along the tube, and the tube's direction lies in XZ, which is a rotation
+    about Y that vhbuild's ring() does not offer. Every band came out as a collar worn
+    at an angle. A short run of the same curve cannot be aimed wrongly, because it is
+    not being aimed at all.
+    """
+    run(name, "iron", at, heading, length, bend, radius, radius, sides=13)
+
+
+def mirror_x(*names):
+    """
+    Doubles the named objects across x = 0, in place.
+
+    A pair has to be a mirror pair, and sweep cannot draw one. Its arc always turns the
+    same way - from +Z toward +X, which is exactly what makes a continuation exact - so
+    the second arm of a V is neither a sweep with a negative bend (clamped away) nor a
+    rotation of the first (a rotation keeps the handedness and lays the arm over on its
+    back). A mirror is a different operation from anything sweep can express, so it is
+    done afterwards, to the object.
+
+    Blender's mirror modifier, and not a scale of -1 with the transform applied. That is
+    the obvious way and it leaves every face inside out, which under flat shading reads
+    as a black arm rather than as an error.
+    """
+    for name in names:
+        obj = bpy.data.objects.get(name)
+        if obj is None:
+            continue
+
+        bpy.ops.object.select_all(action="DESELECT")
+        bpy.context.view_layer.objects.active = obj
+        obj.select_set(True)
+
+        modifier = obj.modifiers.new("pair", "MIRROR")
+        modifier.use_axis[0] = True
+
+        # No welding at the plane. The arms are rooted clear of the centre line so the
+        # block has something to hold, and a merge threshold long enough to reach them
+        # would sew the two of them into one tube through the middle of it.
+        modifier.use_mirror_merge = False
+
+        bpy.ops.object.modifier_apply(modifier=modifier.name)
+
+
 def wolf():
     """
     The one Robbin picked out: a real blowing horn, from a photograph.
@@ -388,12 +502,180 @@ def wolf():
     disc(0.032, 0.008, (0.016, -0.073, 0.130), "bone", sides=17, rot_x=90.0)
 
 
+def scroll():
+    """
+    A ram's horn: one tube wound inward through a turn and a bit, tightening as it goes.
+
+    The only candidate in the set that is mass rather than a line, and that is the whole
+    reason for it. Every other horn here is a stroke drawn across the slot, and a stroke
+    is what a horn has in common with a stick, a bow, a branch and a length of rope - all
+    of which a player also owns. A spiral has that in common with nothing.
+
+    It is not coil. coil is one closed ring of even thickness with daylight through the
+    middle, a hunting horn folded up for carrying, and its whole trade is that hole. A
+    scroll never closes and never repeats a radius: it starts wide and slack at the bell
+    and finishes tight and thin at the tip, so the outline walks the eye inward on its
+    own. Tightening is what stands in for the hole, and the two are not interchangeable -
+    put a hole in this and it becomes coil with a bulge.
+
+    The failure mode is the animal. Wound evenly it stops being an instrument and turns
+    into a shell or a bun, and the two things that keep it a horn are both at the ends:
+    the bell is wide, open and left off the whorl entirely, and the dark tip finishes in
+    the middle where a pale spiral has nothing else to put. That dark centre is doing the
+    same job as wolf's mouthpiece - one landmark inside the outline, so the eye knows
+    which end is which at 48 pixels.
+
+    Built from the bell inward rather than from the tip out, which is the same shape
+    either way round and not the same code: sweep caps its last ring, so winding inward
+    puts the cap on the tip, where a horn is closed, for nothing.
+    """
+    at, head = Vector((0.0, 0.0, 0.0)), 0.0
+
+    # The bell, and the first quarter turn out of it. Slack: a bell that starts turning
+    # hard is a funnel bent in a vice.
+    at, head = run("scroll_bell", "bone", at, head, 0.24, 72.0, 0.086, 0.058, cap=False)
+    band("scroll_lip", at, head, 0.062)
+
+    # Then tighter every run, and thinner with it. The two have to move together - a tube
+    # that keeps its width while the curve closes reads as a hose, and one that thins
+    # while the curve stays open reads as a whip.
+    at, head = run("scroll_wide", "bone", at, head, 0.19, 88.0, 0.058, 0.040)
+    at, head = run("scroll_mid", "bone", at, head, 0.14, 100.0, 0.040, 0.028)
+    band("scroll_throat", at, head, 0.032)
+
+    at, head = run("scroll_inner", "bone", at, head, 0.095, 108.0, 0.028, 0.020)
+
+    # The mouthpiece, in the middle of its own coil. Capped, because this is the closed
+    # end and an open ring of tube at the centre of the whorl is a hole the eye reads as
+    # damage.
+    run("scroll_mouth", "iron", at, head, 0.05, 50.0, 0.019, 0.015, sides=11, cap=True)
+
+
+def twin():
+    """
+    The pair: two arms off one mouthpiece block, braced across.
+
+    The one historical fact none of the others use. Bronze-age lurs are found in pairs,
+    mirrored, buried together - the Brudevaelte find is four of them in two matched sets -
+    and a pair is the only thing in this set that is symmetrical. Symmetry is worth as
+    much in a slot as a hole is: it survives any amount of blur, because it is a property
+    of the whole outline rather than of any part of it.
+
+    Two risks, and they are the same risk twice. Two tapering tubes rising off a block
+    are a helmet, and a helmet with horns is the one Viking cliche this game has always
+    refused. Set them upright and they are a tuning fork instead.
+
+    The brace is the answer to both. A horned helmet has nothing between its horns and a
+    tuning fork has nothing across it, so an iron bar tying the two arms together at a
+    third of their height makes it one made object rather than two shapes that happen to
+    be adjacent. It is also the part that says which way up it goes.
+
+    Modest splay, for the same reason. Wide enough to read as two, narrow enough that the
+    pair stays one silhouette rather than two horns with a gap in the middle.
+    """
+    # One arm, built from the block outward, then mirrored. Rooted 26mm off the centre
+    # line rather than on it: two tubes sharing an axis inside the block would z-fight
+    # along the whole join, and the block is wide enough to hold them apart.
+    at, head = Vector((0.026, 0.0, 0.038)), 10.0
+
+    at, head = run("twin_stem", "bone", at, head, 0.13, 12.0, 0.024, 0.027)
+    band("twin_collar", at, head, 0.031)
+
+    # Where the brace crosses, read off the arm rather than guessed. The two have to
+    # actually touch or the bar is a floating stick, which is the mistake bronze's second
+    # ring is still making in its render.
+    crossing = Vector(at)
+
+    at, head = run("twin_mid", "bone", at, head, 0.19, 24.0, 0.027, 0.036, rings=7)
+
+    # Rings from the flare rather than from the turn. run() counts them off the bend,
+    # which is right for a tube that only bends and wrong for one that doubles in width
+    # over 14cm: at four rings the bell is three visible steps and reads as a stack of
+    # cups.
+    run("twin_bell", "bone", at, head, 0.14, 20.0, 0.036, 0.074, rings=9, cap=False)
+
+    mirror_x("twin_stem", "twin_collar", "twin_mid", "twin_bell")
+
+    # The block. Deep enough to be the thing both arms come out of, rather than a lump
+    # they pass through.
+    box((0.104, 0.082, 0.078), (0.0, 0.0, 0.039), "iron", tilt=1.0)
+
+    # The brace, reaching a centimetre into each arm at both ends.
+    box((crossing.x * 2.0 + 0.020, 0.015, 0.017), (0.0, 0.0, crossing.z), "iron",
+        tilt=1.0)
+
+
+def crook():
+    """
+    A long straight shaft that turns hard into its bell, at one end only.
+
+    Straight-then-suddenly-not is the last outline the other candidates leave alone.
+    bronze bends twice and slowly, wolf bends once and evenly, stave never bends at all,
+    and the eye reads all three as one continuous gesture. This one is two gestures with
+    a corner between them, which is why it is the only horn here that could be mistaken
+    for a tool - and why it is the one that looks like it was made for a purpose rather
+    than cut off an animal.
+
+    The corner is the whole design and it is also where a horn looks broken. A curl set
+    on the end of a straight tube by hand shows the join as a kink, and a kink in a horn
+    is a crack. run() is what makes it survive: the shaft and the curl are one curve with
+    two radii, so there is no join to see, only a place where the same tube starts
+    turning much harder.
+
+    The ring is not decoration either. This is the horn that hangs on a wall between
+    soundings, and a ring is the one detail on any of these candidates that puts real
+    daylight inside the outline - the same trick coil plays with its whole body, bought
+    here for one torus.
+    """
+    at, head = Vector((0.0, 0.0, 0.0)), 0.0
+
+    # The bell is a short hard flare rather than the far end of a long taper, and the
+    # first version proved why it has to be. An even taper into a deep curl is a bowl on
+    # the end of a stem, which is a tobacco pipe - and once seen it cannot be unseen. A
+    # mouth 18cm across on a 5cm tube cannot be a pipe bowl at any size.
+    # Shallow as well as wide, which is the half that matters. A deep flare is a cup
+    # whatever its diameter, and depth is what the eye reads as "holds something".
+    at, head = run("crook_flare", "bone", at, head, 0.055, 14.0, 0.100, 0.048,
+                   rings=9, cap=False)
+
+    # An iron rim right on the lip. Nothing that reads as a bowl has a metal band round
+    # its mouth, so this is worth more against the pipe than another centimetre of
+    # diameter, and it is the second dark landmark in an otherwise pale outline.
+    band("crook_rim", Vector((0.0, 0.0, 0.0)), 0.0, 0.104, length=0.014, bend=3.0)
+
+    # Then the curl. 112 degrees rather than the 148 the pipe had: the bell now opens
+    # outward and slightly up instead of straight up out of a bowl, and the outline stays
+    # open rather than closing back on itself into a claw.
+    at, head = run("crook_curl", "bone", at, head, 0.21, 112.0, 0.048, 0.032)
+    band("crook_knuckle", at, head, 0.036)
+
+    # The shaft. Seven degrees over 36cm, which is straight to look at and not straight
+    # to build - a run at zero would be clamped to one degree anyway, and a shaft with a
+    # trace of curve in it sits in the hand where a ruler does not.
+    at, head = run("crook_shaft", "bone", at, head, 0.16, 4.0, 0.030, 0.026)
+
+    # The hanging ring, on the outside of the shaft's own slight curve so it stands clear
+    # of it. Offset along the perpendicular by less than its own radius, so it bites into
+    # the shaft rather than resting against it.
+    side = Vector((math.cos(math.radians(head)), 0.0, -math.sin(math.radians(head))))
+    hang = at + side * 0.026
+    ring(0.030, 0.007, (hang.x, hang.y, hang.z), "iron", major=15, minor=5, rot_x=90.0)
+
+    at, head = run("crook_lower", "bone", at, head, 0.20, 4.0, 0.026, 0.021)
+    band("crook_collar", at, head, 0.024)
+
+    run("crook_mouth", "iron", at, head, 0.07, 8.0, 0.019, 0.015, sides=11, cap=True)
+
+
 DESIGNS = [
     ("bronze", bronze),
     ("ox", ox),
     ("coil", coil),
     ("stave", stave),
     ("wolf", wolf),
+    ("scroll", scroll),
+    ("twin", twin),
+    ("crook", crook),
 ]
 
 
@@ -411,6 +693,22 @@ def preview_scene(obj):
     paint()
     stage_scene(sun=1.4)
 
+    # stage_scene lights for timber, and these horns are pale ivory. At the shared world
+    # strength of 0.65 a cream object on a lit ground is one value throughout and no
+    # silhouette can be judged, which is the failure the notes describe as dark brown
+    # rendering as pale beige. Dimmed here rather than in vhbuild, because every other
+    # mod's props are darker than this and want the light they have.
+    bpy.context.scene.world.node_tree.nodes["Background"].inputs[1].default_value = 0.28
+
+    # And a key on the camera's side of it. stage_scene's sun is aimed from +y, which is
+    # behind the object from here, so every candidate was photographed against its own
+    # shadow: a cream horn came out mid grey and the two materials were one value. The
+    # angles are the icon pass's, which are already proven on these shapes.
+    bpy.ops.object.light_add(type="SUN", location=(-0.7, -1.1, 0.8))
+    key = bpy.context.active_object
+    key.data.energy = 2.4
+    key.rotation_euler = (math.radians(56.0), 0.0, math.radians(-34.0))
+
     corners = [obj.matrix_world @ Vector(c) for c in obj.bound_box]
     lo = [min(c[i] for c in corners) for i in range(3)]
     hi = [max(c[i] for c in corners) for i in range(3)]
@@ -420,10 +718,17 @@ def preview_scene(obj):
     obj.location.z -= lo[2]
     centre[2] -= lo[2]
 
-    reference_cube((0.42, 0.0, 0.125))
+    # The block stands clear of whatever is being staged rather than at a fixed 42cm,
+    # which was measured off wolf and is inside scroll: the camera sits out on +x, so a
+    # fixed block ends up in front of any candidate wider than the one it was set for,
+    # and the reference hides the thing it is there to measure.
+    reference_cube((hi[0] + 0.20, -0.06, 0.125))
     bpy.context.active_object.scale = (0.25, 0.25, 0.25)
 
-    camera((0.62, -0.95, 0.52), (centre[0], centre[1], centre[2]), lens=50)
+    # A fifth further back than the hand distance wolf was framed at. The block now stands
+    # off the candidate rather than at a fixed 42cm, so on a wide one it was walking out of
+    # frame and taking the only thing that says how big any of this is with it.
+    camera((0.74, -1.13, 0.62), (centre[0], centre[1], centre[2]), lens=50)
 
 
 def paint():
@@ -468,7 +773,7 @@ def paint():
         bsdf.inputs["Roughness"].default_value = 0.42
 
 
-def icon_scene(obj):
+def icon_scene(obj, turn=180.0):
     """
     Orthographic, three quarters on, transparent, fitted.
 
@@ -488,7 +793,12 @@ def icon_scene(obj):
     # Done to the object for the render rather than to the mesh, because the mesh's own
     # orientation is what the held and dropped horn use and that is a separate question with
     # its own rule: item prefabs lie face-up, not standing.
-    obj.rotation_euler = (0.0, math.radians(180.0), 0.0)
+    #
+    # Half a turn is wolf's portrait and not a universal one, which is why it is an argument
+    # now. twin is built standing on its mouthpiece block, so the same 180 hangs it from the
+    # ceiling by its bells - and an upside-down object does not read as upside down, it reads
+    # as a different object. A bipod, in that case.
+    obj.rotation_euler = (0.0, math.radians(turn), 0.0)
     bpy.context.view_layer.update()
 
     scene = bpy.context.scene
@@ -565,7 +875,7 @@ def build(label, maker):
     clear_scene()
     maker()
     obj = finish(name)
-    icon_scene(obj)
+    icon_scene(obj, turn=ICON_TURN.get(label, 180.0))
 
     # 128, not 64. Valheim scales icons down and a sharp source survives that better
     # than one rendered at the size it will be shown at.
@@ -580,10 +890,29 @@ def build(label, maker):
     print("DESIGN_OK %s tris=%d%s" % (name, tris, " [SHIPPED]" if winner else ""))
 
 
+def wanted():
+    r"""
+    Which candidates this run builds. Everything, unless told otherwise:
+
+        blender --background --python tools/lur_designs.py -- only=scroll,fold
+
+    A full run re-exports the winner over assets\lur.obj and repaints assets\lur.png, which
+    is exactly right when the shipped horn is the thing being worked on and exactly wrong when
+    it is not. Rendering a new candidate should not be able to touch the horn already in the
+    game, so a subset run skips the winner and therefore skips that write entirely.
+    """
+    for arg in sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []:
+        if arg.startswith("only="):
+            picked = [name.strip() for name in arg[5:].split(",") if name.strip()]
+            return [(label, maker) for label, maker in DESIGNS if label in picked]
+
+    return DESIGNS
+
+
 def main():
     os.makedirs(PREVIEWS, exist_ok=True)
 
-    for label, maker in DESIGNS:
+    for label, maker in wanted():
         build(label, maker)
 
 
