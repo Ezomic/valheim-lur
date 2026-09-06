@@ -291,9 +291,48 @@ namespace Lur
             if (!spawner.m_creaturePrefab.TryGetComponent(out character)) return false;
             if (character == null) return false;
 
-            if (!character.m_boss) return false;
+            string key = character.m_defeatSetGlobalKey;
+            if (string.IsNullOrEmpty(key)) return false;
 
-            return !string.IsNullOrEmpty(character.m_defeatSetGlobalKey);
+            // m_boss is definitive when set, and it is not set here: the Howling Cavern's
+            // Fenring_Cultist_Hildir has it false, so requiring it found nothing among 74
+            // spawners. That flag is for the six altar bosses and the boss HUD; Hildir's three
+            // are special creatures without being bosses in that technical sense.
+            if (character.m_boss) return true;
+
+            // So the key itself is the discriminator, and the split is the game's own. The
+            // GlobalKeys enum is the set of keys vanilla treats specially - world modifiers,
+            // altar defeats, and the incidental kill counters KilledBat, KilledTroll and
+            // killed_surtling. A key outside it is a custom quest key, which is exactly what
+            // BossHildir1/2/3 are, and nothing ordinary in a dungeon writes one.
+            //
+            // This does exclude the six altar bosses, whose keys do parse. That is correct
+            // rather than a gap: they are not in Hildir's dungeons and Lur reaches nothing else.
+            return !VanillaKey(key);
+        }
+
+        /// <summary>
+        /// Whether a defeat key is one the game itself knows about.
+        ///
+        /// Mirrors how vanilla reads a global key: ZoneSystem lowercases and parses against
+        /// GlobalKeys, and anything that does not parse is carried as a plain custom key. So
+        /// the parse is case-insensitive here for the same reason.
+        /// </summary>
+        private static bool VanillaKey(string key)
+        {
+            try
+            {
+                GlobalKeys parsed;
+                return System.Enum.TryParse(key, true, out parsed)
+                       && System.Enum.IsDefined(typeof(GlobalKeys), parsed);
+            }
+            catch
+            {
+                // A malformed key is not a vanilla one. Never let this throw into the caller:
+                // it runs inside the UseItem prefix, and a throw there breaks item use in
+                // general and presents as a vanilla bug.
+                return false;
+            }
         }
 
         /// <summary>
