@@ -75,7 +75,7 @@ namespace Lur
             // wakes the boss and nothing else, and that what was taken stays taken - and those
             // now live in the README alone. Worth knowing if a player ever asks why their
             // chests are still empty: the item no longer says.
-            shared.m_description = "A long horn of turned bone and iron.";
+            shared.m_description = "A coiled horn of bone and iron, worn smooth at the mouth.";
 
             // Material, not Consumable: Consumable routes UseItem into ConsumeItem and the
             // eat animation, and Consumable is also the branch that destroys the item whatever

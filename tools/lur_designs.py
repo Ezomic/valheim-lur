@@ -18,9 +18,10 @@ since the outline is the whole of what survives the slot:
     ox      a deep crescent, thick at the mouth, bound with iron.
     coil    wound once into a closed ring, hunting-horn fashion.
     stave   dead straight, a tapered bone tube with a flared bell and lashings.
-    wolf    the one that ships. A real blowing horn, from a photograph Robbin sent.
+    wolf    a real blowing horn, from a photograph Robbin sent. Shipped until scroll.
 
-    scroll  a ram's horn, wound three quarters of a turn, tightening as it goes.
+    scroll  the one that ships. A ram's horn, wound three quarters of a turn, tightening
+            as it goes.
     crook   a shaft that turns hard into its bell: the horn sounded in a fight.
 
 An S, a crescent, a ring, a cone, and the real thing. Nothing here is a variation on
@@ -29,9 +30,9 @@ design. The first four were built before the photograph and are kept because the
 reasoning in them is why wolf is shaped as it is: ox in particular is the same object
 built backwards, and the difference between the two is the whole lesson.
 
-The last two came later and answer a different question. wolf is settled and shipped, so
-they are not attempts to beat it on its own terms - a second gentle arc would only be
-wolf drawn worse. They take two outlines the first five left unclaimed: mass instead of
+The last two came later and answer a different question. wolf was settled and shipped when
+they were drawn, so they are not attempts to beat it on its own terms - a second gentle arc
+would only be wolf drawn worse. They take two outlines the first five left unclaimed: mass instead of
 a line, and one hard turn instead of an even one. Both are built on run() rather than on
 a single sweep, because both change their curvature along their length and a sweep is a
 circle.
@@ -70,7 +71,12 @@ PREVIEWS = os.path.join(ASSETS, "previews")
 # The winner is exported a second time under the shipping names, so the horn you hold
 # and the picture in the slot are the same geometry and cannot drift apart. Everything
 # else stays in variants\, which the build does not copy.
-WINNER = "wolf"
+#
+# scroll as of 2026-09-07, and wolf before it. wolf was the photograph and it was a good
+# horn; it lost to the one thing an outline cannot buy back, which is that a coiled horn is
+# not a shape anything else in the inventory has. Nothing about wolf is deprecated - it is
+# still the reference for how a blowing horn is proportioned, and scroll's bell is its bell.
+WINNER = "scroll"
 SHIPPED_MESH = "lur"
 SHIPPED_ICON = "lur.png"
 
