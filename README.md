@@ -10,11 +10,16 @@ and the cosmetic reward is the part that is not. Lur separates them.
 
 **It wakes the boss and nothing else.** Not the draugr on the way in, not the chests, not
 the pots. Looted chests stay looted, smashed props stay smashed, mined veins stay mined -
-so a repeat run buys the fight, its drops and its trophy, and nothing you already took. If
-you want an emptied crypt to fill back up, that is a different job with a different
-mechanism: most of what a dungeon loses is deleted rather than changed, and only
-regenerating the whole room puts it back. Lur never deletes anything, which is exactly why
-it cannot do that and exactly why it is safe.
+so a repeat run buys the fight, its drops and its trophy, and nothing you already took.
+
+That is a choice and not a limit, and this readme used to claim otherwise. It said most of
+what a dungeon loses is deleted rather than changed, so only regenerating a whole room could
+put it back. That is wrong. A looted chest, a picked bush, a part-mined vein and a spent
+spawner all still exist, each carrying a flag or a value recording what happened to it, and
+writing those back restores them without destroying anything. So an emptied crypt filling up
+again is perfectly possible - it is simply a different mod with a different argument, and
+[Dvala](https://github.com/Ezomic/valheim-dvala) is that mod. Lur still does none of it, on
+purpose: the horn is sold as the fight again, not the crypt again.
 
 **Hildir will not accept a second chest.** Her turn-in is recorded on the world, and her own
 code refuses an offering whose key the world already holds - before the item is even taken.

@@ -3,6 +3,22 @@
 Notable changes to Lur. Format follows [Keep a Changelog](https://keepachangelog.com),
 and the mod uses [semantic versioning](https://semver.org).
 
+## [1.0.1] - 2026-09-09
+
+### Fixed
+
+- **The readme explained itself with something untrue.** It said most of what a dungeon loses
+  is deleted rather than changed, so only regenerating a whole room could put it back, and
+  that Lur therefore *could not* restock a crypt even in principle. Reading the game says
+  otherwise: a looted chest, a picked bush, a part-mined vein and a spent spawner all still
+  exist, each carrying a flag or a value recording what happened to it, and writing those back
+  restores them without destroying anything.
+
+  Nothing in the mod changes. Lur still wakes the boss and nothing else, and that is a choice
+  rather than a limit - the horn is sold as the fight again, not the crypt again. But the
+  reason given for it was wrong, and somebody reading it to decide whether a restocking mod
+  was even possible would have been told no. It points at Dvala now, which is that mod.
+
 ## [1.0.0] - 2026-09-08
 
 First release.

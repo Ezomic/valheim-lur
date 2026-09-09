@@ -1,7 +1,7 @@
 {
     "name":  "Lur",
     "author":  "Robbin Thijssen",
-    "version_number":  "1.0.0",
+    "version_number":  "1.0.1",
     "description":  "Sound a horn in one of Hildir's dungeons and its mini-boss wakes again.",
     "dependencies":  [
                          "denikson-BepInExPack_Valheim-5.4.2333"
