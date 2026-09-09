@@ -3,6 +3,22 @@
 Notable changes to Lur. Format follows [Keep a Changelog](https://keepachangelog.com),
 and the mod uses [semantic versioning](https://semver.org).
 
+## [1.1.0] - 2026-09-10
+
+Rebuilt for Valheim 1.0. This version does not run on pre-1.0 Valheim, and the previous one
+does not run on 1.0.
+
+### Fixed
+
+- **Hildir offered the horn at 12345 coins, and would not sell it.** Valheim 1.0 grew
+  Trader.TradeItem from four fields to eleven, and the store reads one of the new ones without
+  a guard - `if (tradeItem.m_tooltip.Length > 0)`. A row built in code leaves unset strings
+  null where Unity's own rows come from an asset and hold "", so drawing this row threw. The
+  price label is written below the throw, so it kept the list template's placeholder text; the
+  click listener is added lower still, so the row could not be bought at all. Every string on
+  the row is now set explicitly, including the ones this mod has no use for, so the next
+  release that adds a field does not repeat it.
+
 ## [1.0.1] - 2026-09-09
 
 ### Fixed

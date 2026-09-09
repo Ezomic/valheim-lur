@@ -55,7 +55,7 @@ namespace Lur
     {
         public const string PluginGuid = "ezomic.valheim.lur";
         public const string PluginName = "Lur";
-        public const string PluginVersion = "1.0.1";
+        public const string PluginVersion = "1.1.0";
         public const string PluginAuthor = "Robbin Thijssen";
 
         /// <summary>Core's plugin GUID. Optional - see TryRegisterWithCore.</summary>
