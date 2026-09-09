@@ -57,7 +57,33 @@ namespace Lur
                 m_prefab = drop,
                 m_stack = Mathf.Max(1, LurConfig.Stack.Value),
                 m_price = Mathf.Max(0, LurConfig.Price.Value),
-                m_requiredGlobalKey = LurConfig.SoldAfterKey.Value ?? ""
+                m_requiredGlobalKey = LurConfig.SoldAfterKey.Value ?? "",
+
+                // Every string field, set explicitly, including the ones this mod has no use
+                // for. Valheim 1.0 grew TradeItem from four fields to eleven, and StoreGui.FillList
+                // reads one of the new ones without a guard:
+                //
+                //     if (tradeItem.m_tooltip.Length > 0)
+                //
+                // A TradeItem built from a C# object initialiser leaves unnamed strings null -
+                // Unity's own rows come from a serialised asset, where an unset string is "" -
+                // so that line threw a NullReferenceException on this row and took the rest of
+                // the loop with it. The damage was not an error message: the price label is
+                // written a few lines LOWER, so it kept the list-element prefab's placeholder and
+                // Hildir advertised the horn at 12345 coins. The click listener is added lower
+                // still, so the row could not be bought at all.
+                //
+                // It was invisible from the mod's side too. The exception lands in Player.log
+                // rather than BepInEx's LogOutput, and this mod's own line said "Hildir will
+                // stock Lur at 500 coins" - which was true of the object and false of the shop.
+                //
+                // So the rule is the general one rather than a patch for m_tooltip: when the game
+                // hands out a plain class to fill in, fill in all of it. The next release that
+                // adds a field will otherwise do this again.
+                m_name = "",
+                m_tooltip = "",
+                m_buyKey = "",
+                m_incrementKey = ""
             };
 
             LurPlugin.Log.LogInfo("Hildir will stock " + LurItem.Name + " at " + _row.m_price
