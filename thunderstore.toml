@@ -7,7 +7,7 @@ schemaVersion = "0.0.1"
 [package]
 namespace = "Ezomic"
 name = "Lur"
-versionNumber = "1.0.1"
+versionNumber = "1.1.0"
 description = "Sound a horn in one of Hildir's dungeons and its mini-boss wakes again."
 websiteUrl = "https://github.com/Ezomic/valheim-lur"
 containsNsfwContent = false
