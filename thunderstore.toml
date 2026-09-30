@@ -35,3 +35,6 @@ target = "CHANGELOG.md"
 [publish]
 repository = "https://thunderstore.io"
 communities = [ "valheim" ]
+
+[publish.categories]
+valheim = [ "mods", "misc", "tools", "utility", "deep-north-update", "ai-generated" ]
