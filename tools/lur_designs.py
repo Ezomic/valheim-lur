@@ -86,6 +86,11 @@ SHIPPED_ICON = "lur.png"
 # from parameters it came back subtly different from the picture that had been approved.
 ICON_TURN = {}
 
+# Wall of the scroll's bone tube. The bell is open on purpose, so the inside of it, and of the
+# bore behind it, is something a player looks into. 9mm: thin enough to read as horn, and
+# inside the narrowest run's 30mm radius with room to spare.
+HORN_WALL = 0.009
+
 
 # --------------------------------------------------------------------------- shapes
 
@@ -209,7 +214,7 @@ def stave():
 
 def sweep(name, mat, length, base_r, tip_r, bend, rings=26, sides=12, taper_power=1.35,
           origin=(0.0, 0.0, 0.0), lean=0.0, arc_start=0.0, curve_radius=None,
-          cap=True):
+          cap=True, wall=0.0):
     """
     A tapering tube swept along a smooth arc, built as one mesh.
 
@@ -335,11 +340,25 @@ def sweep(name, mat, length, base_r, tip_r, bend, rings=26, sides=12, taper_powe
 
     mesh.materials.append(material(mat))
 
+    # A swept shell has no thickness, and Valheim culls back faces, so looking into an
+    # open bell shows the world through its own far wall. The wall has to grow inward, which
+    # leaves the outside - the silhouette the horn was picked on - exactly where it was.
+    # Offset +1, not the usual -1: the quads above wind so their Blender normals point at the
+    # axis, and the first build with -1 grew the bell outward by the full wall (bbox 0.086 to
+    # 0.094). use_rim closes the lip, or the mouth is a knife edge doing the same thing smaller.
+    if wall > 0.0:
+        bpy.context.view_layer.objects.active = obj
+        solid = obj.modifiers.new("wall", "SOLIDIFY")
+        solid.thickness = wall
+        solid.offset = 1.0
+        solid.use_rim = True
+        bpy.ops.object.modifier_apply(modifier=solid.name)
+
     return tip
 
 
 def run(name, mat, start, heading, length, bend, base_r, tip_r, rings=None, sides=13,
-        taper_power=1.0, cap=False):
+        taper_power=1.0, cap=False, wall=0.0):
     """
     One length of horn with a curvature of its own, laid exactly on the end of the last.
 
@@ -374,7 +393,7 @@ def run(name, mat, start, heading, length, bend, base_r, tip_r, rings=None, side
 
     sweep(name, mat, length=length, base_r=base_r, tip_r=tip_r, bend=bend, rings=rings,
           sides=sides, taper_power=taper_power, origin=tuple(start), lean=heading,
-          arc_start=0.0, curve_radius=radius, cap=cap)
+          arc_start=0.0, curve_radius=radius, cap=cap, wall=wall)
 
     # Where the arc came out, in the same frame sweep put it. Read from the arc rather
     # than from sweep's returned tip, which is the centre of the last ring and therefore
@@ -514,14 +533,17 @@ def scroll():
 
     # The bell, and the first quarter turn out of it. Slack: a bell that starts turning
     # hard is a funnel bent in a vice.
-    at, head = run("scroll_bell", "bone", at, head, 0.24, 72.0, 0.086, 0.058, cap=False)
+    at, head = run("scroll_bell", "bone", at, head, 0.24, 72.0, 0.086, 0.058, cap=False,
+                   wall=HORN_WALL)
     band("scroll_lip", at, head, 0.062)
 
     # Then tighter, and thinner with it. The two have to move together - a tube that keeps
     # its width while the curve closes reads as a hose, and one that thins while the curve
     # stays open reads as a whip.
-    at, head = run("scroll_wide", "bone", at, head, 0.19, 88.0, 0.058, 0.042)
-    at, head = run("scroll_mid", "bone", at, head, 0.13, 65.0, 0.042, 0.030)
+    at, head = run("scroll_wide", "bone", at, head, 0.19, 88.0, 0.058, 0.042,
+                   wall=HORN_WALL)
+    at, head = run("scroll_mid", "bone", at, head, 0.13, 65.0, 0.042, 0.030,
+                   wall=HORN_WALL)
     band("scroll_throat", at, head, 0.034)
 
     # The mouthpiece, out in the open where a mouth can reach it. Twenty five degrees and
