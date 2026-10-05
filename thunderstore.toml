@@ -7,7 +7,7 @@ schemaVersion = "0.0.1"
 [package]
 namespace = "Ezomic"
 name = "Lur"
-versionNumber = "1.1.1"
+versionNumber = "1.1.2"
 description = "Sound a horn in one of Hildir's dungeons and its mini-boss wakes again."
 websiteUrl = "https://github.com/Ezomic/valheim-lur"
 containsNsfwContent = false
@@ -35,3 +35,6 @@ target = "CHANGELOG.md"
 [publish]
 repository = "https://thunderstore.io"
 communities = [ "valheim" ]
+
+[publish.categories]
+valheim = [ "mods", "misc", "tools", "utility", "deep-north-update", "ai-generated" ]

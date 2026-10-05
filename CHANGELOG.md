@@ -3,6 +3,16 @@
 Notable changes to Lur. Format follows [Keep a Changelog](https://keepachangelog.com),
 and the mod uses [semantic versioning](https://semver.org).
 
+## [1.1.2] - 2026-10-05
+
+### Fixed
+
+- **The horn's bell was see-through (LHM-24).** The bell is open on purpose, but the bone tube
+  was a single surface with no thickness, and Valheim does not draw the back of a face. Looking
+  into the mouth showed the world through the far wall of the bell instead of the inside of the
+  horn. The bone now has a 9mm wall, grown inward, so the outside is exactly the horn that was
+  picked and the inside is solid. The icon is redrawn from the new model and looks the same.
+
 ## [1.1.1] - 2026-09-12
 
 ### Changed
